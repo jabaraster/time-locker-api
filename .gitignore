@@ -1,3 +1,7 @@
 nogit/
 node_modules/
 sam-app/time-locker-nodejs/node_modules/
+sam-app/.aws-sam/
+sam-app/time-locker-nodejs/*.js
+sam-app/time-locker-nodejs/*.map
+.vscode/
