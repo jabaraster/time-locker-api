@@ -28,6 +28,7 @@ export interface IPlayResult {
   score: number;
   title: string;
   armaments: IArmaments[];
+  reason: string[];
   evernoteMeta: IEvernoteMeta;
   armamentsMeta: IArmamentBounding[];
   levelsMeta: Rekognition.IExtractArmamentsLevelResponse;
@@ -80,7 +81,8 @@ export async function evernoteWebhookEndpoint(event: APIGatewayEvent, _: Context
       });
     }
 
-    const ret = await processNote(noteGuid);
+    const user = await EA.getUser();
+    const ret = await processNote(user, noteGuid);
     return ok({
       message: `${ret.length} image analyzed.`,
     });
@@ -105,7 +107,8 @@ export async function analyzeEvernoteNoteApi(event: APIGatewayEvent): Promise<AP
       });
     }
     const noteGuid = event.queryStringParameters!.noteGuid;
-    const res = await processNote(noteGuid);
+    const user = await EA.getUser();
+    const res = await processNote(user, noteGuid);
     return ok(res);
 
   } catch (err) {
@@ -120,11 +123,9 @@ export async function analyzeEvernoteNoteApi(event: APIGatewayEvent): Promise<AP
  * Export functions.
  *****************************************/
 
-export async function processNote(noteGuid: string): Promise<IPlayResult[]> {
+export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResult[]> {
   const noteAsync = EA.getNote(noteGuid);
-  const userAsync = EA.getUser();
   const note = await noteAsync;
-  const user = await userAsync;
   const resources = note.resources.filter((resource) => resource.mime.startsWith("image/"));
   return await Promise.all(resources.map(processResource(user, note)));
 }
@@ -148,14 +149,15 @@ export async function processImage(imageData: Buffer): Promise<IPlayResult> {
     mode: score.mode,
     score: score.score,
     title: "",
-    evernoteMeta: {
-    },
     armaments: armaments.armaments.map((arm, idx) => {
       return {
         name: arm.name,
         level: idx < levels.processedResult.length ? parseInt(levels.processedResult[idx].DetectedText!, 10) : null,
       };
     }),
+    reason: [],
+    evernoteMeta: {
+    },
     armamentsMeta: armaments.armaments,
     levelsMeta: levels,
   };
@@ -187,6 +189,14 @@ export async function screenShotAnalyzerTestPage(_: APIGatewayEvent): Promise<AP
     );
 }
 
+export function extractReason(title: string): string[] {
+  const sentences = title.split("。");
+  if (sentences.length < 2) {
+    return [];
+  }
+  return sentences[1].split("、");
+}
+
 /*****************************************
  * Workers.
  *****************************************/
@@ -206,6 +216,7 @@ function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote
     const playResult = await processImage(Buffer.from(data));
     playResult.created = new Date(note.created);
     playResult.title = note.title;
+    playResult.reason = extractReason(note.title),
     playResult.evernoteMeta = {
       noteGuid: note.guid,
       mediaGuid: resource.guid,
