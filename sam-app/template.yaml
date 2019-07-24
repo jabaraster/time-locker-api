@@ -107,3 +107,47 @@ Resources:
 
   PlayResultBucket:
     Type: AWS::S3::Bucket
+
+  ################################
+  # Glue Resources
+  ################################
+  MyRole: # ここのサンプルまま: https://docs.aws.amazon.com/ja_jp/AWSCloudFormation/latest/UserGuide/aws-resource-glue-crawler.html#cfn-glue-crawler-role
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+
+  TimeLockerDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      DatabaseInput:
+        Name: time-locker
+      CatalogId: !Ref AWS::AccountId
+
+  PlayResultCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Role: !GetAtt MyRole.Arn
+      DatabaseName: !Ref TimeLockerDatabase
+      Targets:
+        S3Targets:
+          - Path: !Ref PlayResultBucket
