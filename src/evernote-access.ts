@@ -13,25 +13,18 @@ import * as fs from "fs";
 // tslint:disable-next-line: no-var-requires
 const evernote = require("evernote");
 
-function newEvernoteClient(): any {
+const client = (function (): any {
     return new evernote.Client({
         token: process.env.EVERNOTE_TOKEN,
         consumerKey: process.env.EVERNOTE_CONSUMER_KEY,
         consumerSecret: process.env.EVERNOTE_CONSUMER_SECRET,
         sandbox: false,
     });
-}
+})();
 
-const client = newEvernoteClient();
-
-async function getTimeLockerNotebook(): Promise<Evernote.Notebook> {
-    const books: Evernote.Notebook[] = await client.getNoteStore().listNotebooks();
-    const book = books.find((b) => b.name === "Time Locker");
-    if (!book) {
-        throw new Error("Notebook [Time Locker] not found.");
-    }
-    return book;
-}
+/*****************************************
+ * Export functions.
+ *****************************************/
 
 export { getTimeLockerNotebook };
 
@@ -83,4 +76,17 @@ export async function getResourceData(guid: string): Promise<Buffer> {
 
 export async function getUser(): Promise<Evernote.User> {
     return await client.getUserStore().getUser();
+}
+
+/*****************************************
+ * Workers.
+ *****************************************/
+
+async function getTimeLockerNotebook(): Promise<Evernote.Notebook> {
+    const books: Evernote.Notebook[] = await client.getNoteStore().listNotebooks();
+    const book = books.find((b) => b.name === "Time Locker");
+    if (!book) {
+        throw new Error("Notebook [Time Locker] not found.");
+    }
+    return book;
 }

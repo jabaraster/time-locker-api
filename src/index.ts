@@ -24,6 +24,7 @@ export interface IEvernoteMeta {
 }
 export interface IPlayResult {
   created: Date;
+  character: string;
   mode: Rekognition.TimeLockerMode;
   score: number;
   title: string;
@@ -55,9 +56,9 @@ export async function evernoteWebhookEndpoint(event: APIGatewayEvent, _: Context
       });
     }
     const reason = queryStringParameters.reason;
-    if (reason !== "create") {
+    if (reason !== "create" && reason !== "update") {
       return ok({
-        message: `No operation. Because reason not '${reason}'.`,
+        message: `No operation. Because reason is '${reason}'.`,
       });
     }
 
@@ -147,6 +148,7 @@ export async function processImage(imageData: Buffer): Promise<IPlayResult> {
   return {
     created: new Date(),
     mode: score.mode,
+    character: "",
     score: score.score,
     title: "",
     armaments: armaments.armaments.map((arm, idx) => {
@@ -197,6 +199,11 @@ export function extractReason(title: string): string[] {
   return sentences[1].split("、");
 }
 
+export function extractCharacter(title: string): string {
+  const r = title.match(/^\[(.+)\]/);
+  return r ? r[1] : "";
+}
+
 /*****************************************
  * Workers.
  *****************************************/
@@ -215,6 +222,7 @@ function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
     playResult.created = new Date(note.created);
+    playResult.character = extractCharacter(note.title),
     playResult.title = note.title;
     playResult.reason = extractReason(note.title),
     playResult.evernoteMeta = {
