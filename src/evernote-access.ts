@@ -13,7 +13,7 @@ import * as fs from "fs";
 // tslint:disable-next-line: no-var-requires
 const evernote = require("evernote");
 
-const client = (function (): any {
+const client = (() => {
     return new evernote.Client({
         token: process.env.EVERNOTE_TOKEN,
         consumerKey: process.env.EVERNOTE_CONSUMER_KEY,
@@ -63,7 +63,7 @@ export async function createTimeLockerNotebook(): Promise<Evernote.Notebook> {
 
 /**
  * リソースのデータは含まれないので注意.
- * @param guid 
+ * @param guid
  */
 export async function getNote(guid: string): Promise<Evernote.Note> {
     return await client.getNoteStore().getNote(guid, true, false, false, false);

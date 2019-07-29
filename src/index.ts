@@ -1,4 +1,4 @@
-import { APIGatewayEvent, APIGatewayProxyResult, Context } from "aws-lambda";
+import { APIGatewayEvent, APIGatewayProxyResult } from "aws-lambda";
 import * as AWS from "aws-sdk";
 import { BoundingBox, TextDetection } from "aws-sdk/clients/rekognition";
 import { Evernote } from "evernote";
@@ -11,6 +11,9 @@ const lambda: AWS.Lambda = new AWS.Lambda({
   region: "ap-northeast-1",
 });
 const s3: AWS.S3 = new AWS.S3();
+const athena: AWS.Athena = new AWS.Athena({
+  region: "ap-northeast-1",
+});
 
 /*****************************************
  * Export type definitions.
@@ -44,86 +47,162 @@ export interface IArmamentBounding {
 }
 
 /*****************************************
- * Export APIs.
+ * Export API declarations.
  *****************************************/
+async function getScoreAverage_(): Promise<APIGatewayProxyResult> {
+  const executionRes = await athena.startQueryExecution({
+    ResultConfiguration: {
+      OutputLocation: `s3://${process.env.ATHENA_RESULT_BUCKET}/`,
+    },
+    QueryString: `
+SELECT
+  character
+  , mode
+  , count(*) play_count
+  , avg(score) score_average
+FROM
+  "time-locker"."time_locker_analyzer_playresultbucket_t2ke5sj5sed"
+where
+  character <> ''
+  and cardinality(armaments) > 0
+group by
+  character
+  , mode
+order by
+  mode
+  , score_average desc
+    `,
+  }).promise();
 
-export async function evernoteWebhookEndpoint(event: APIGatewayEvent, _: Context): Promise<APIGatewayProxyResult> {
-  try {
-    const queryStringParameters = event.queryStringParameters;
-    if (!queryStringParameters) {
-      return badRequest({
-        message: "Query string is null.",
-      });
-    }
-    const reason = queryStringParameters.reason;
-    if (reason !== "create" && reason !== "update") {
-      return ok({
-        message: `No operation. Because reason is '${reason}'.`,
-      });
-    }
+  await waitAthena(executionRes.QueryExecutionId!, 1);
 
-    const notebookGuid = queryStringParameters.notebookGuid;
-    if (!notebookGuid) {
-      return badRequest({
-        message: `GUID for notebook is empty.`,
-      });
-    }
-    const notebook = await EA.getTimeLockerNotebook();
-    if (notebook.guid !== notebookGuid) {
-      return ok({
-        message: `No operation. Because, note is not Time Locker note'.`,
-      });
-    }
+  const queryRes = await athena.getQueryResults({
+    QueryExecutionId: executionRes.QueryExecutionId!,
+  }).promise();
 
-    const noteGuid = queryStringParameters.guid;
-    if (!noteGuid) {
-      return badRequest({
-        message: `GUID for note is empty.`,
-      });
+  const rs = queryRes.ResultSet!;
+  const bodyHtml = "<tbody>"
+  + rs.Rows!.map((row, rowIdx) => {
+    if (rowIdx === 0) {
+      return `
+<tr>
+  <th class="col-xs-5">${row.Data![0].VarCharValue}</th>
+  <th class="col-xs-2">${row.Data![1].VarCharValue}</th>
+  <th class="col-xs-2">${row.Data![2].VarCharValue}</th>
+  <th class="col-xs-3">${row.Data![3].VarCharValue}</th>
+</tr>`;
+    } else {
+      return `
+<tr>
+  <td>${row.Data![0].VarCharValue}</td>
+  <td>${row.Data![1].VarCharValue}</td>
+  <td>${row.Data![2].VarCharValue}</td>
+  <td>${parseInt(row.Data![3].VarCharValue!, 10)}</td>
+</tr>`;
     }
+  }).join("")
+  + "</tbody>";
 
-    const user = await EA.getUser();
-    const ret = await processNote(user, noteGuid);
-    return ok({
-      message: `${ret.length} image analyzed.`,
-    });
-  } catch (err) {
-    console.log("!!!error occurred !!!");
-    console.log(err);
-    return internalServerError({});
-  }
+  return ok(`
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Jabara's Time Locker Score Average</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <style>
+    th {
+      word-break: break-all;
+    }
+    </style>
+  </head>
+  <body>
+    <table class="table table-striped">${bodyHtml}</table>
+  </body>
+</html>
+  `, {
+    "Content-Type": "text/html",
+  });
 }
 
-export async function analyzeScreenShotApi(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function evernoteWebhookEndpoint_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+  const queryStringParameters = event.queryStringParameters;
+  if (!queryStringParameters) {
+    return badRequest({
+      message: "Query string is null.",
+    });
+  }
+  const reason = queryStringParameters.reason;
+  if (reason !== "create" && reason !== "update") {
+    return ok({
+      message: `No operation. Because reason is '${reason}'.`,
+    });
+  }
+
+  const notebookGuid = queryStringParameters.notebookGuid;
+  if (!notebookGuid) {
+    return badRequest({
+      message: `GUID for notebook is empty.`,
+    });
+  }
+  const notebook = await EA.getTimeLockerNotebook();
+  if (notebook.guid !== notebookGuid) {
+    return ok({
+      message: `No operation. Because, note is not Time Locker note'.`,
+    });
+  }
+
+  const noteGuid = queryStringParameters.guid;
+  if (!noteGuid) {
+    return badRequest({
+      message: `GUID for note is empty.`,
+    });
+  }
+
+  const user = await EA.getUser();
+  const ret = await processNote(user, noteGuid);
+  return ok({
+    message: `${ret.length} image analyzed.`,
+  });
+}
+
+async function analyzeScreenShotApi_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
   const data = JSON.parse(event.body!).dataInBase64;
   const ret = await processImage(Buffer.from(data, "base64"));
   return ok(ret);
 }
 
-export async function analyzeEvernoteNoteApi(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
-  try {
-    if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
-      return badRequest({
-        message: "Query parameter 'noteGuid' is missing.",
-      });
-    }
-    const noteGuid = event.queryStringParameters!.noteGuid;
-    const user = await EA.getUser();
-    const res = await processNote(user, noteGuid);
-    return ok(res);
-
-  } catch (err) {
-    console.log(err);
-    return internalServerError({
-      error: err,
+async function analyzeEvernoteNoteApi_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+  if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
+    return badRequest({
+      message: "Query parameter 'noteGuid' is missing.",
     });
   }
+  const noteGuid = event.queryStringParameters!.noteGuid;
+  const user = await EA.getUser();
+  const res = await processNote(user, noteGuid);
+  return ok(res);
 }
+
+/*****************************************
+ * Export APIs.
+ *****************************************/
+const getScoreAverage = handler(getScoreAverage_);
+export { getScoreAverage };
+
+const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpoint_);
+export { evernoteWebhookEndpoint };
+
+const analyzeScreenShotApi = handler2(analyzeScreenShotApi_);
+export { analyzeScreenShotApi };
+
+const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApi_);
+export { analyzeEvernoteNoteApi };
 
 /*****************************************
  * Export functions.
  *****************************************/
-
 export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResult[]> {
   const noteAsync = EA.getNote(noteGuid);
   const note = await noteAsync;
@@ -264,4 +343,54 @@ async function callArmamentsExtracter(imageData: Buffer): Promise<ArmamentsExtra
     };
   });
   return body;
+}
+
+async function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, milliseconds);
+  });
+}
+
+async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCount: number): Promise<void> {
+  if (testCount > 10) {
+    throw new Error("Timeout.");
+  }
+  const cfg = {
+    QueryExecutionId: queryExecutionId,
+  };
+  console.log(`Atheaクエリの完了を待ちます. 試行回数: ${testCount}`);
+  const res = await athena.getQueryExecution(cfg).promise();
+  if (res.QueryExecution!.Status!.State === "SUCCEEDED") {
+    return;
+  }
+  console.log(`  結果: ${res.QueryExecution!.Status!.State}`);
+  await sleep(1000);
+  return await waitAthena(queryExecutionId, testCount + 1);
+}
+
+function handler(func: () => Promise<APIGatewayProxyResult>): () => Promise<APIGatewayProxyResult> {
+  return async () => {
+    try {
+      return func();
+    } catch (err) {
+      console.log("!!! error !!!");
+      console.log(err);
+      return internalServerError({ errorMessage: err.message });
+    }
+  };
+}
+function handler2(
+  func: (e: APIGatewayEvent) => Promise<APIGatewayProxyResult>,
+  ): (e: APIGatewayEvent) => Promise<APIGatewayProxyResult> {
+  return async (e: APIGatewayEvent) => {
+    try {
+      return func(e);
+    } catch (err) {
+      console.log("!!! error !!!");
+      console.log(err);
+      return internalServerError({ errorMessage: err.message });
+    }
+  };
 }

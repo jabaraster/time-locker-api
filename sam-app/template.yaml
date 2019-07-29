@@ -13,6 +13,10 @@ Parameters:
     Type: String
 
 Resources:
+
+  ################################
+  # API Resources
+  ################################
   EvernoteWebhook:
     Type: AWS::Serverless::Function
     Properties:
@@ -97,7 +101,56 @@ Resources:
           Properties:
             Path: /ui/screen-shot/analyzer
             Method: get
-            
+
+  GetScoreAverage:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getScoreAverage
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        ScoreAverageGet:
+          Type: Api
+          Properties:
+            Path: /score/average
+            Method: get
+  AthenaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: "sts:AssumeRole"
+          - Effect: Allow
+            Principal:
+              Service: athena.amazonaws.com
+            Action: "sts:AssumeRole"
+      Policies:
+        -
+          PolicyName: GetScoreAveragePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+            - Effect: "Allow"
+              Action: "athena:*"
+              Resource: "*"
+            - Effect: "Allow"
+              Action: "glue:*"
+              Resource: "*"
+            - Effect: "Allow"
+              Action: "s3:*"
+              Resource: "*"
+
+  ################################
+  # Lambda Resource
+  ################################
   ArmamentsExtracter:
     Type: AWS::Serverless::Function
     Properties:
@@ -105,7 +158,12 @@ Resources:
       Handler: app.extract_armaments
       Runtime: python3.7
 
+  ################################
+  # S3 Resource
+  ################################
   PlayResultBucket:
+    Type: AWS::S3::Bucket
+  AthenaResultBucket:
     Type: AWS::S3::Bucket
 
   ################################
