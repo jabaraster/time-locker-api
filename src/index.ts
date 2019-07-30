@@ -81,6 +81,8 @@ order by
   }).promise();
 
   const rs = queryRes.ResultSet!;
+  console.log(JSON.stringify(rs.ResultSetMetadata!.ColumnInfo, null, "  "));
+
   const bodyHtml = "<tbody>"
   + rs.Rows!.map((row, rowIdx) => {
     if (rowIdx === 0) {
@@ -127,6 +129,8 @@ order by
 }
 
 async function evernoteWebhookEndpoint_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+  console.log(JSON.stringify(event.queryStringParameters, null, "  "));
+
   const queryStringParameters = event.queryStringParameters;
   if (!queryStringParameters) {
     return badRequest({
@@ -204,8 +208,10 @@ export { analyzeEvernoteNoteApi };
  * Export functions.
  *****************************************/
 export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResult[]> {
-  const noteAsync = EA.getNote(noteGuid);
-  const note = await noteAsync;
+  const note = await EA.getNote(noteGuid);
+  if (!note.resources) {
+    return [];
+  }
   const resources = note.resources.filter((resource) => resource.mime.startsWith("image/"));
   return await Promise.all(resources.map(processResource(user, note)));
 }
