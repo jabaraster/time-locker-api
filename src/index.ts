@@ -18,7 +18,6 @@ const athena: AWS.Athena = new AWS.Athena({
 /*****************************************
  * Export type definitions.
  *****************************************/
-
 export interface IEvernoteMeta {
   noteGuid?: string;
   mediaGuid?: string;
@@ -50,17 +49,13 @@ export interface IArmamentBounding {
  * Export API declarations.
  *****************************************/
 async function getScoreAverage_(): Promise<APIGatewayProxyResult> {
-  const executionRes = await athena.startQueryExecution({
-    ResultConfiguration: {
-      OutputLocation: `s3://${process.env.ATHENA_RESULT_BUCKET}/`,
-    },
-    QueryString: `
-SELECT
+  const query = `
+select
   character
   , mode
   , count(*) play_count
   , avg(score) score_average
-FROM
+from
   "time-locker"."time_locker_analyzer_playresultbucket_t2ke5sj5sed"
 where
   character <> ''
@@ -71,39 +66,9 @@ group by
 order by
   mode
   , score_average desc
-    `,
-  }).promise();
+`;
 
-  await waitAthena(executionRes.QueryExecutionId!, 1);
-
-  const queryRes = await athena.getQueryResults({
-    QueryExecutionId: executionRes.QueryExecutionId!,
-  }).promise();
-
-  const rs = queryRes.ResultSet!;
-  console.log(JSON.stringify(rs.ResultSetMetadata!.ColumnInfo, null, "  "));
-
-  const bodyHtml = "<tbody>"
-  + rs.Rows!.map((row, rowIdx) => {
-    if (rowIdx === 0) {
-      return `
-<tr>
-  <th class="col-xs-5">${row.Data![0].VarCharValue}</th>
-  <th class="col-xs-2">${row.Data![1].VarCharValue}</th>
-  <th class="col-xs-2">${row.Data![2].VarCharValue}</th>
-  <th class="col-xs-3">${row.Data![3].VarCharValue}</th>
-</tr>`;
-    } else {
-      return `
-<tr>
-  <td>${row.Data![0].VarCharValue}</td>
-  <td>${row.Data![1].VarCharValue}</td>
-  <td>${row.Data![2].VarCharValue}</td>
-  <td>${parseInt(row.Data![3].VarCharValue!, 10)}</td>
-</tr>`;
-    }
-  }).join("")
-  + "</tbody>";
+  const rs = await executeAthenaQuery(query);
 
   return ok(`
 <!doctype html>
@@ -117,10 +82,67 @@ order by
     th {
       word-break: break-all;
     }
+    .play_count, .score_average {
+      text-align: right;
+    }
     </style>
   </head>
   <body>
-    <table class="table table-striped">${bodyHtml}</table>
+    <table class="table table-striped">
+      ${toTableRow(rs, (d, c) => {
+        return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+      }, [7, 2, 1, 2])}
+    </table>
+  </body>
+</html>
+  `, {
+    "Content-Type": "text/html",
+  });
+}
+
+async function getCharacterHighscore_(): Promise<APIGatewayProxyResult> {
+  const query = `
+select
+  character
+  , mode
+  , max(score) highscore
+from
+  "time-locker"."time_locker_analyzer_playresultbucket_t2ke5sj5sed"
+where
+  character <> ''
+group by
+  mode
+  , character
+order by
+  mode
+  , highscore desc
+`;
+
+  const rs = await executeAthenaQuery(query);
+
+  return ok(`
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Jabara's Time Locker Character Highscore</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <style>
+    th {
+      word-break: break-all;
+    }
+    .highscore {
+      text-align: right;
+    }
+    </style>
+  </head>
+  <body>
+    <table class="table table-striped">
+      ${toTableRow(rs, (d, c) => {
+        return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+      })}
+    </table>
   </body>
 </html>
   `, {
@@ -194,6 +216,9 @@ async function analyzeEvernoteNoteApi_(event: APIGatewayEvent): Promise<APIGatew
  *****************************************/
 const getScoreAverage = handler(getScoreAverage_);
 export { getScoreAverage };
+
+const getCharacterHighscore = handler(getCharacterHighscore_);
+export { getCharacterHighscore };
 
 const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpoint_);
 export { evernoteWebhookEndpoint };
@@ -360,7 +385,7 @@ async function sleep(milliseconds: number): Promise<void> {
 }
 
 async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCount: number): Promise<void> {
-  if (testCount > 10) {
+  if (testCount > 20) {
     throw new Error("Timeout.");
   }
   const cfg = {
@@ -387,6 +412,7 @@ function handler(func: () => Promise<APIGatewayProxyResult>): () => Promise<APIG
     }
   };
 }
+
 function handler2(
   func: (e: APIGatewayEvent) => Promise<APIGatewayProxyResult>,
   ): (e: APIGatewayEvent) => Promise<APIGatewayProxyResult> {
@@ -399,4 +425,67 @@ function handler2(
       return internalServerError({ errorMessage: err.message });
     }
   };
+}
+
+function toTableRow(
+  rs: AWS.Athena.ResultSet,
+  valueCallback: ((data: AWS.Athena.Datum, columnInfo: AWS.Athena.ColumnInfo) => string) | null,
+  columnWidth: number[] | null = null,
+  ): string {
+
+  const rsMeta = rs.ResultSetMetadata!;
+  const columns = rsMeta.ColumnInfo!;
+  if (columnWidth) {
+    if (columnWidth.length !== columns.length) {
+      throw new Error("カラム幅の指定が不正です.");
+    }
+    if (columnWidth.reduce((pre, cur) => pre + cur, 0) !== 12) {
+      throw new Error("カラム幅の指定が不正です.");
+    }
+  }
+  const f = (idx: number) => {
+    return columnWidth ? `col-xs-${columnWidth[idx]}` : "";
+  };
+  const headerHtml = `
+<thead>
+  <tr>
+  ${rsMeta.ColumnInfo!.map((column, idx) => {
+    return `<th class="col-xs-${f(idx)} ${column.Name}">${column.Name}</th>`;
+  }).join("")}
+  </tr>
+</thead>
+`;
+
+  const rows = rs.Rows!;
+  rows.shift(); // 先頭にカラム名が入っているので除く.
+  const bodyHtml = `
+<tbody>
+  ${rows.map((row) => {
+    return `<tr>${row.Data!.map((columnValue, columnIndex) => {
+      return `<td class="${columns[columnIndex].Name}">${valueCallback ? valueCallback(columnValue, columns[columnIndex]) : columnValue}</td>`;
+    }).join("")}</tr>`;
+  }).join("")}
+</tbody>
+`;
+  return headerHtml + bodyHtml;
+}
+
+async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> {
+  const executionRes = await athena.startQueryExecution({
+    ResultConfiguration: {
+      OutputLocation: `s3://${process.env.ATHENA_RESULT_BUCKET}/`,
+    },
+    QueryString: query,
+  }).promise();
+
+  await waitAthena(executionRes.QueryExecutionId!, 1);
+
+  const queryRes = await athena.getQueryResults({
+    QueryExecutionId: executionRes.QueryExecutionId!,
+  }).promise();
+
+  const rs = queryRes.ResultSet!;
+  console.log(JSON.stringify(rs.ResultSetMetadata!.ColumnInfo, null, "  "));
+
+  return rs;
 }

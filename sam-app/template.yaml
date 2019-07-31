@@ -118,6 +118,24 @@ Resources:
           Properties:
             Path: /score/average
             Method: get
+
+  GetCharacterHighscore:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getCharacterHighscore
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        GetCharacterHighscoreGet:
+          Type: Api
+          Properties:
+            Path: /score/character-highscore
+            Method: get
+
   AthenaExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -134,7 +152,7 @@ Resources:
             Action: "sts:AssumeRole"
       Policies:
         -
-          PolicyName: GetScoreAveragePolicy
+          PolicyName: AthenaExecutionPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
