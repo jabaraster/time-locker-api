@@ -14,6 +14,7 @@ const s3: AWS.S3 = new AWS.S3();
 const athena: AWS.Athena = new AWS.Athena({
   region: "ap-northeast-1",
 });
+const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_");
 
 /*****************************************
  * Export type definitions.
@@ -31,7 +32,7 @@ export interface IPlayResult {
   score: number;
   title: string;
   armaments: IArmaments[];
-  reason: string[];
+  reasons: string[];
   evernoteMeta: IEvernoteMeta;
   armamentsMeta: IArmamentBounding[];
   levelsMeta: Rekognition.IExtractArmamentsLevelResponse;
@@ -48,7 +49,17 @@ export interface IArmamentBounding {
 /*****************************************
  * Export API declarations.
  *****************************************/
-async function getScoreAverage_(): Promise<APIGatewayProxyResult> {
+async function updateS3Objects_(): Promise<APIGatewayProxyResult> {
+  await updateS3Object((playResult) => {
+    const a = playResult as any;
+    if (!a.reasons) {
+      a.reasons = a.reason;
+    }
+  });
+  return ok({});
+}
+
+async function getCharacterAverageScore_(): Promise<APIGatewayProxyResult> {
   const query = `
 select
   character
@@ -56,7 +67,7 @@ select
   , count(*) play_count
   , avg(score) score_average
 from
-  "time-locker"."time_locker_analyzer_playresultbucket_t2ke5sj5sed"
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where
   character <> ''
   and cardinality(armaments) > 0
@@ -76,7 +87,7 @@ order by
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Jabara's Time Locker Score Average</title>
+    <title>Character average score | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
     <style>
     th {
@@ -107,7 +118,7 @@ select
   , mode
   , max(score) highscore
 from
-  "time-locker"."time_locker_analyzer_playresultbucket_t2ke5sj5sed"
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where
   character <> ''
 group by
@@ -126,13 +137,61 @@ order by
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Jabara's Time Locker Character Highscore</title>
+    <title>Character highscore | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
     <style>
     th {
       word-break: break-all;
     }
     .highscore {
+      text-align: right;
+    }
+    </style>
+  </head>
+  <body>
+    <table class="table table-striped">
+      ${toTableRow(rs, (d, c) => {
+        return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+      })}
+    </table>
+  </body>
+</html>
+  `, {
+    "Content-Type": "text/html",
+  });
+}
+
+async function getScorePerArmlevel_(): Promise<APIGatewayProxyResult> {
+  const query = `
+select
+  arms.name
+  , sum(score)/sum(arms.level) as score_per_armlevel
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+  cross join unnest(armaments) as t(arms)
+where
+  cardinality(armaments) > 0
+group by
+  arms.name
+order by
+  score_per_armlevel
+`;
+
+  const rs = await executeAthenaQuery(query);
+
+  return ok(`
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Score per armlevel | Jabara's Time Locker</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <style>
+    th {
+      word-break: break-all;
+    }
+    .score_per_armlevel {
       text-align: right;
     }
     </style>
@@ -214,11 +273,14 @@ async function analyzeEvernoteNoteApi_(event: APIGatewayEvent): Promise<APIGatew
 /*****************************************
  * Export APIs.
  *****************************************/
-const getScoreAverage = handler(getScoreAverage_);
-export { getScoreAverage };
+const getCharacterAverageScore = handler(getCharacterAverageScore_);
+export { getCharacterAverageScore };
 
 const getCharacterHighscore = handler(getCharacterHighscore_);
 export { getCharacterHighscore };
+
+const getScorePerArmlevel = handler(getScorePerArmlevel_);
+export { getScorePerArmlevel };
 
 const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpoint_);
 export { evernoteWebhookEndpoint };
@@ -228,6 +290,9 @@ export { analyzeScreenShotApi };
 
 const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApi_);
 export { analyzeEvernoteNoteApi };
+
+const updateS3Objects = handler(updateS3Objects_);
+export { updateS3Objects };
 
 /*****************************************
  * Export functions.
@@ -267,7 +332,7 @@ export async function processImage(imageData: Buffer): Promise<IPlayResult> {
         level: idx < levels.processedResult.length ? parseInt(levels.processedResult[idx].DetectedText!, 10) : null,
       };
     }),
-    reason: [],
+    reasons: [],
     evernoteMeta: {
     },
     armamentsMeta: armaments.armaments,
@@ -334,7 +399,7 @@ function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote
     playResult.created = new Date(note.created);
     playResult.character = extractCharacter(note.title),
     playResult.title = note.title;
-    playResult.reason = extractReason(note.title),
+    playResult.reasons = extractReason(note.title),
     playResult.evernoteMeta = {
       noteGuid: note.guid,
       mediaGuid: resource.guid,
@@ -393,12 +458,17 @@ async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCou
   };
   console.log(`Atheaクエリの完了を待ちます. 試行回数: ${testCount}`);
   const res = await athena.getQueryExecution(cfg).promise();
-  if (res.QueryExecution!.Status!.State === "SUCCEEDED") {
-    return;
+  switch (res.QueryExecution!.Status!.State) {
+    case "SUCCEEDED":
+      return;
+    case "FAILED":
+      throw Error(JSON.stringify(res.QueryExecution!.Status));
+    default: {
+      console.log(`  結果: ${res.QueryExecution!.Status!.State}`);
+      await sleep(1000);
+      return await waitAthena(queryExecutionId, testCount + 1);
+    }
   }
-  console.log(`  結果: ${res.QueryExecution!.Status!.State}`);
-  await sleep(1000);
-  return await waitAthena(queryExecutionId, testCount + 1);
 }
 
 function handler(func: () => Promise<APIGatewayProxyResult>): () => Promise<APIGatewayProxyResult> {
@@ -488,4 +558,45 @@ async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> 
   console.log(JSON.stringify(rs.ResultSetMetadata!.ColumnInfo, null, "  "));
 
   return rs;
+}
+
+async function updateS3Object(updater: (src: IPlayResult) => void): Promise<void> {
+    const f = async (objs: AWS.S3.Object[], index: number): Promise<void> => {
+        if (index >= objs.length) {
+            return;
+        }
+        const obj = objs[index];
+        console.log(`-------- ${obj.Key}`);
+
+        try {
+            const c = await s3.getObject({
+                Bucket: process.env.PLAY_RESULT_BUCKET!,
+                Key: obj.Key!,
+            }, (err, data) => { /* dummy function */ }).promise();
+            const playResult: IPlayResult = JSON.parse(c.Body!.toString("UTF-8"));
+            updater(playResult);
+            await s3.putObject({
+                Bucket: process.env.PLAY_RESULT_BUCKET!,
+                Key: obj.Key!,
+                Body: JSON.stringify(playResult),
+            }).promise();
+        } catch (err) {
+            console.log("!!! error !!!");
+            console.log(err);
+        }
+
+        setTimeout(() => {
+            f(objs, index + 1);
+        }, 0);
+    };
+    try {
+        const objs = await s3.listObjects({
+            Bucket: process.env.PLAY_RESULT_BUCKET!,
+        }).promise();
+        await f(objs.Contents!, 0);
+
+    } catch (err) {
+        console.log("!!! error !!!");
+        console.log(err);
+    }
 }

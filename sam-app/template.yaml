@@ -102,21 +102,22 @@ Resources:
             Path: /ui/screen-shot/analyzer
             Method: get
 
-  GetScoreAverage:
+  GetCharacterAverageScore:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getScoreAverage
+      Handler: index.getCharacterAverageScore
       Runtime: nodejs10.x
       Environment:
         Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        ScoreAverageGet:
+        GetCharacterAverageScoreApi:
           Type: Api
           Properties:
-            Path: /score/average
+            Path: /score/character-average
             Method: get
 
   GetCharacterHighscore:
@@ -127,14 +128,47 @@ Resources:
       Runtime: nodejs10.x
       Environment:
         Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
         GetCharacterHighscoreGet:
           Type: Api
           Properties:
-            Path: /score/character-highscore
+            Path: /score/character-high
             Method: get
+
+  GetScorePerArmlevel:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getScorePerArmlevel
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        GetScorePerArmlevelApi:
+          Type: Api
+          Properties:
+            Path: /arms/score-per-level
+            Method: get
+
+  UpdateS3Objects:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.updateS3Objects
+      Runtime: nodejs10.x
+      Timeout: 900
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref PlayResultBucket
 
   AthenaExecutionRole:
     Type: AWS::IAM::Role
