@@ -165,6 +165,7 @@ async function getScorePerArmlevel_(): Promise<APIGatewayProxyResult> {
   const query = `
 select
   arms.name
+  , mode
   , sum(score)/sum(arms.level) as score_per_armlevel
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
@@ -173,8 +174,10 @@ where
   cardinality(armaments) > 0
 group by
   arms.name
+  , mode
 order by
-  score_per_armlevel
+  mode
+  , score_per_armlevel
 `;
 
   const rs = await executeAthenaQuery(query);
