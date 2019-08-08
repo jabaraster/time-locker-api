@@ -2,9 +2,6 @@ import json
 import base64
 import tempfile
 import cv2
-import glob
-import os
-import boto3
 
 ARMAMENTS_X = 780
 ARMAMENTS_Y = 1200
@@ -85,6 +82,11 @@ def clip_image(img, position, size):
     return img[position[1]:position[1]+size[1], position[0]:position[0]+size[0]]
 
 if __name__ == '__main__':
+    file = "IMG_4261.JPG"
+    src = cv2.imread("../../save/Time Locker/IMG_4261.JPG")
+    img = clip_image(src, position=[30, 1560], size=[660, 470])
+    cv2.imwrite("")
+
     c = open("../../nogit/miss.jpg", "rb").read()
     res = extract_armaments({"dataInBase64":base64.b64encode(c).decode("UTF-8")}, {})
     # res = proc("../../nogit/screen-shot.jpg")

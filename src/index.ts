@@ -99,11 +99,14 @@ order by
     </style>
   </head>
   <body>
-    <table class="table table-striped">
-      ${toTableRow(rs, (d, c) => {
-        return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
-      }, [7, 2, 1, 2])}
-    </table>
+    <div class="container">
+      <h1>Character average score</h1>
+      <table class="table table-striped">
+        ${toTableRow(rs, (d, c) => {
+          return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+        }, [7, 2, 1, 2])}
+      </table>
+    </div>
   </body>
 </html>
   `, {
@@ -149,11 +152,14 @@ order by
     </style>
   </head>
   <body>
-    <table class="table table-striped">
-      ${toTableRow(rs, (d, c) => {
-        return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
-      })}
-    </table>
+    <div class="container">
+      <h1>Character highscore</h1>
+      <table class="table table-striped">
+        ${toTableRow(rs, (d, c) => {
+          return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+        })}
+      </table>
+    </div>
   </body>
 </html>
   `, {
@@ -200,11 +206,14 @@ order by
     </style>
   </head>
   <body>
-    <table class="table table-striped">
-      ${toTableRow(rs, (d, c) => {
-        return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
-      })}
-    </table>
+    <div class="container">
+      <h1>Score per armlevel</h1>
+      <table class="table table-striped">
+        ${toTableRow(rs, (d, c) => {
+          return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+        })}
+      </table>
+    </div>
   </body>
 </html>
   `, {
