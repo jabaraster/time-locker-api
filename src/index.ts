@@ -96,6 +96,10 @@ order by
     .play_count, .score_average {
       text-align: right;
     }
+    img.character-image {
+      width: 132px;
+      height: 94px;
+    }
     </style>
   </head>
   <body>
@@ -103,7 +107,11 @@ order by
       <h1>Character average score</h1>
       <table class="table table-striped">
         ${toTableRow(rs, (d, c) => {
-          return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+          if (c.Name === "character") {
+            return `<img src="http://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}.png" class="character-image" alt="${d.VarCharValue}"/>`;
+          } else {
+            return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+          }
         }, [7, 2, 1, 2])}
       </table>
     </div>
@@ -149,6 +157,10 @@ order by
     .highscore {
       text-align: right;
     }
+    img.character-image {
+      width: 132px;
+      height: 94px;
+    }
     </style>
   </head>
   <body>
@@ -156,7 +168,11 @@ order by
       <h1>Character highscore</h1>
       <table class="table table-striped">
         ${toTableRow(rs, (d, c) => {
-          return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+          if (c.Name === "character") {
+            return `<img src="http://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}.png" class="character-image" alt="${d.VarCharValue}"/>`;
+          } else {
+            return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+          }
         })}
       </table>
     </div>
@@ -203,6 +219,10 @@ order by
     .score_per_armlevel {
       text-align: right;
     }
+    img.character-image {
+      width: 132px;
+      height: 94px;
+    }
     </style>
   </head>
   <body>
@@ -210,7 +230,11 @@ order by
       <h1>Score per armlevel</h1>
       <table class="table table-striped">
         ${toTableRow(rs, (d, c) => {
-          return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+          if (c.Name === "character") {
+            return `<img src="http://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}.png" class="character-image" alt="${d.VarCharValue}"/>`;
+          } else {
+            return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+          }
         })}
       </table>
     </div>
