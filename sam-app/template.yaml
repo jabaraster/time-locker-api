@@ -36,6 +36,8 @@ Resources:
         - RekognitionDetectOnlyPolicy: {}
         - S3CrudPolicy:
             BucketName: !Ref PlayResultBucket
+        - SESCrudPolicy:
+            IdentityName: jabara.info
       Events:
         EvernoteWebhookGet:
           Type: Api

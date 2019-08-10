@@ -1,9 +1,11 @@
 import * as AWS from "aws-sdk";
+import * as fs from "fs";
 import * as sut from "../src/index";
 
 const s3 = new AWS.S3();
 
 (async () => {
-    const res = await sut.getCharacterAverageScore();
+    // await sut.sendErrorMail(new Error());
+    const res = await sut.getCharacterHighscore();
     console.log(res.body);
 })();
