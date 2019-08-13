@@ -22,7 +22,7 @@ import * as fs from "fs";
     });
     detections.sort((d0, d1) => d1.Confidence! - d0.Confidence! );
 
-    const modelName = detections[0].DetectedText!;
+    const modelName = detections[0].DetectedText!.replace(/ l/, "").replace(/ II/, "");
     console.log(`${modelName}`);
     try {
       fs.copyFileSync(fullPath, baseDir + "model-proccesed/" + modelName + ".png");
