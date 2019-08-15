@@ -14,7 +14,9 @@ const s3: AWS.S3 = new AWS.S3();
 const athena: AWS.Athena = new AWS.Athena({
   region: "ap-northeast-1",
 });
-const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_");
+const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
+                               ? process.env.PLAY_RESULT_BUCKET.replace(/-/g, "_")
+                               : "";
 
 /*****************************************
  * Export type definitions.
@@ -49,7 +51,7 @@ export interface IArmamentBounding {
 /*****************************************
  * Export API declarations.
  *****************************************/
-async function updateS3Objects_(): Promise<APIGatewayProxyResult> {
+async function updateS3ObjectsCore(): Promise<APIGatewayProxyResult> {
   await updateS3Object((playResult) => {
     const a = playResult as any;
     if (!a.reasons) {
@@ -59,7 +61,7 @@ async function updateS3Objects_(): Promise<APIGatewayProxyResult> {
   return ok({});
 }
 
-async function getCharacterAverageScore_(): Promise<APIGatewayProxyResult> {
+async function getCharacterAverageScoreCore(): Promise<APIGatewayProxyResult> {
   const query = `
 select
   character
@@ -89,30 +91,13 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Character average score | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <style>
-    th {
-      word-break: break-all;
-    }
-    .play_count, .score_average {
-      text-align: right;
-    }
-    img.character-image {
-      width: 132px;
-      height: 94px;
-    }
-    </style>
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
       <h1>Character average score</h1>
-      <table class="table table-striped">
-        ${toTableRow(rs, (d, c) => {
-          if (c.Name === "character") {
-            return `<img src="http://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}.png" class="character-image" alt="${d.VarCharValue}"/>`;
-          } else {
-            return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
-          }
-        }, [7, 2, 1, 2])}
+      <table class="table">
+        ${toTableRow(rs, valueGetter, [7, 2, 1, 2])}
       </table>
     </div>
   </body>
@@ -122,7 +107,7 @@ order by
   });
 }
 
-async function getCharacterHighscore_(): Promise<APIGatewayProxyResult> {
+async function getCharacterHighscoreCore(): Promise<APIGatewayProxyResult> {
   const query = `
 select
   character
@@ -150,40 +135,23 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Character highscore | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <style>
-    th {
-      word-break: break-all;
-    }
-    .highscore {
-      text-align: right;
-    }
-    img.character-image {
-      width: 132px;
-      height: 94px;
-    }
-    </style>
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
       <h1>Character highscore</h1>
-      <table class="table table-striped">
-        ${toTableRow(rs, (d, c) => {
-          if (c.Name === "character") {
-            return `<img src="http://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}.png" class="character-image" alt="${d.VarCharValue}"/>`;
-          } else {
-            return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
-          }
-        })}
+      <table class="table">
+        ${toTableRow(rs, valueGetter)}
       </table>
     </div>
-  </body>
+  </bodye
 </html>
   `, {
     "Content-Type": "text/html",
   });
 }
 
-async function getScorePerArmlevel_(): Promise<APIGatewayProxyResult> {
+async function getScorePerArmlevelCore(): Promise<APIGatewayProxyResult> {
   const query = `
 select
   arms.name
@@ -212,30 +180,13 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Score per armlevel | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <style>
-    th {
-      word-break: break-all;
-    }
-    .score_per_armlevel {
-      text-align: right;
-    }
-    img.character-image {
-      width: 132px;
-      height: 94px;
-    }
-    </style>
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
       <h1>Score per armlevel</h1>
-      <table class="table table-striped">
-        ${toTableRow(rs, (d, c) => {
-          if (c.Name === "character") {
-            return `<img src="http://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}.png" class="character-image" alt="${d.VarCharValue}"/>`;
-          } else {
-            return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
-          }
-        })}
+      <table class="table">
+        ${toTableRow(rs, valueGetter)}
       </table>
     </div>
   </body>
@@ -245,7 +196,7 @@ order by
   });
 }
 
-async function evernoteWebhookEndpoint_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function evernoteWebhookEndpointCore(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
   console.log(JSON.stringify(event.queryStringParameters, null, "  "));
 
   const queryStringParameters = event.queryStringParameters;
@@ -283,18 +234,20 @@ async function evernoteWebhookEndpoint_(event: APIGatewayEvent): Promise<APIGate
 
   const user = await EA.getUser();
   const ret = await processNote(user, noteGuid);
-  return ok({
-    message: `${ret.length} image analyzed.`,
+  console.log("正常終了.");
+  ret.forEach((r, i) => {
+    console.log(`${i + 1}: ${r.title}`);
   });
+  return ok({ message: `${ret.length} image analyzed.` });
 }
 
-async function analyzeScreenShotApi_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function analyzeScreenShotApiCore(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
   const data = JSON.parse(event.body!).dataInBase64;
   const ret = await processImage(Buffer.from(data, "base64"));
   return ok(ret);
 }
 
-async function analyzeEvernoteNoteApi_(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function analyzeEvernoteNoteApiCore(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
   if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
     return badRequest({
       message: "Query parameter 'noteGuid' is missing.",
@@ -306,29 +259,81 @@ async function analyzeEvernoteNoteApi_(event: APIGatewayEvent): Promise<APIGatew
   return ok(res);
 }
 
+async function homePageCore(): Promise<APIGatewayProxyResult> {
+  return ok(`
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link href="https://use.fontawesome.com/releases/v5.6.3/css/all.css" rel="stylesheet" integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
+  </head>
+  <body>
+    <script src="https://static.time-locker.jabara.info/js/index.min.js"></script>
+    <script>
+    Elm.Index.init();
+    </script>
+  </body>
+</html>
+  `, {
+    "Content-Type": "text/html",
+  });
+}
+
+async function getCharacterListCore(): Promise<APIGatewayProxyResult> {
+  const query = `
+select
+  character
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where
+  character <> ''
+  and cardinality(armaments) <> 0
+group by
+  character
+order by
+  character
+`;
+
+  const rows = (await executeAthenaQuery(query)).Rows!;
+  rows.shift();
+  return ok(rows.map((row) => {
+    return { name: row.Data![0].VarCharValue || "" };
+  }));
+}
+
 /*****************************************
  * Export APIs.
  *****************************************/
-const getCharacterAverageScore = handler(getCharacterAverageScore_);
+const getCharacterAverageScore = handler(getCharacterAverageScoreCore);
 export { getCharacterAverageScore };
 
-const getCharacterHighscore = handler(getCharacterHighscore_);
+const getCharacterHighscore = handler(getCharacterHighscoreCore);
 export { getCharacterHighscore };
 
-const getScorePerArmlevel = handler(getScorePerArmlevel_);
+const getScorePerArmlevel = handler(getScorePerArmlevelCore);
 export { getScorePerArmlevel };
 
-const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpoint_);
+const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpointCore);
 export { evernoteWebhookEndpoint };
 
-const analyzeScreenShotApi = handler2(analyzeScreenShotApi_);
+const analyzeScreenShotApi = handler2(analyzeScreenShotApiCore);
 export { analyzeScreenShotApi };
 
-const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApi_);
+const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApiCore);
 export { analyzeEvernoteNoteApi };
 
-const updateS3Objects = handler(updateS3Objects_);
+const updateS3Objects = handler(updateS3ObjectsCore);
 export { updateS3Objects };
+
+const homePage = handler(homePageCore);
+export { homePage };
+
+const getCharacterList = handler(getCharacterListCore);
+export { getCharacterList };
 
 /*****************************************
  * Export functions.
@@ -415,6 +420,33 @@ export function extractCharacter(title: string): string {
   return r ? r[1] : "";
 }
 
+export async function sendErrorMail(err: Error): Promise<void> {
+  const ses = new AWS.SES({
+    region: "us-east-1",
+  });
+  await ses.sendEmail({
+    Source: "time-locker-info@jabara.info",
+    Destination: {
+      ToAddresses: ["ah+time-locker@jabara.info"],
+    },
+    Message: {
+      Subject: {
+        Data: "[Time Locker]Evernote Weghookの処理に失敗しました.",
+        Charset: "UTF-8",
+      },
+      Body: {
+        Text: {
+          Data: `
+            発生日: ${new Date()}
+            エラー: ${JSON.stringify(err)}
+          `,
+          Charset: "UTF-8",
+        },
+      },
+    },
+  }, () => { /*dummy*/ }).promise();
+}
+
 /*****************************************
  * Workers.
  *****************************************/
@@ -486,7 +518,7 @@ async function sleep(milliseconds: number): Promise<void> {
 }
 
 async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCount: number): Promise<void> {
-  if (testCount > 20) {
+  if (testCount > 40) {
     throw new Error("Timeout.");
   }
   const cfg = {
@@ -501,7 +533,7 @@ async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCou
       throw Error(JSON.stringify(res.QueryExecution!.Status));
     default: {
       console.log(`  結果: ${res.QueryExecution!.Status!.State}`);
-      await sleep(1000);
+      await sleep(500);
       return await waitAthena(queryExecutionId, testCount + 1);
     }
   }
@@ -514,6 +546,8 @@ function handler(func: () => Promise<APIGatewayProxyResult>): () => Promise<APIG
     } catch (err) {
       console.log("!!! error !!!");
       console.log(err);
+      console.log(JSON.stringify(err));
+      await sendErrorMail(err);
       return internalServerError({ errorMessage: err.message });
     }
   };
@@ -528,6 +562,8 @@ function handler2(
     } catch (err) {
       console.log("!!! error !!!");
       console.log(err);
+      console.log(JSON.stringify(err));
+      await sendErrorMail(err);
       return internalServerError({ errorMessage: err.message });
     }
   };
@@ -556,7 +592,10 @@ function toTableRow(
 <thead>
   <tr>
   ${rsMeta.ColumnInfo!.map((column, idx) => {
-    return `<th class="col-xs-${f(idx)} ${column.Name}">${column.Name}</th>`;
+    return `
+<th class="${f(idx)} ${column.Name}${isNumberTypeColumn(column) ? " number" : ""}">
+${column.Name}
+</th>`;
   }).join("")}
   </tr>
 </thead>
@@ -568,12 +607,25 @@ function toTableRow(
 <tbody>
   ${rows.map((row) => {
     return `<tr>${row.Data!.map((columnValue, columnIndex) => {
-      return `<td class="${columns[columnIndex].Name}">${valueCallback ? valueCallback(columnValue, columns[columnIndex]) : columnValue}</td>`;
+      const column = columns[columnIndex];
+      return `
+ <td class="${column.Name}${isNumberTypeColumn(column) ? " number" : ""}">
+ ${valueCallback ? valueCallback(columnValue, columns[columnIndex]) : columnValue}
+ </td>`;
     }).join("")}</tr>`;
   }).join("")}
 </tbody>
 `;
   return headerHtml + bodyHtml;
+}
+
+function isNumberTypeColumn(column: AWS.Athena.ColumnInfo): boolean {
+  switch (column.Type) {
+    case "double": return true;
+    case "bigint": return true;
+    case "integer": return true;
+    default: return false;
+  }
 }
 
 async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> {
@@ -590,10 +642,7 @@ async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> 
     QueryExecutionId: executionRes.QueryExecutionId!,
   }).promise();
 
-  const rs = queryRes.ResultSet!;
-  console.log(JSON.stringify(rs.ResultSetMetadata!.ColumnInfo, null, "  "));
-
-  return rs;
+  return queryRes.ResultSet!;
 }
 
 async function updateS3Object(updater: (src: IPlayResult) => void): Promise<void> {
@@ -635,4 +684,18 @@ async function updateS3Object(updater: (src: IPlayResult) => void): Promise<void
         console.log("!!! error !!!");
         console.log(err);
     }
+}
+
+function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
+  if (c.Name === "character") {
+    return `
+<div class="character-image-container">
+  <img src="https://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}@65x65.png"
+       class="character"/>
+  <span>${d.VarCharValue}</span>
+</div>
+`;
+  } else {
+    return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
+  }
 }

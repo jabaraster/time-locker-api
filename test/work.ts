@@ -22,10 +22,10 @@ import * as fs from "fs";
     });
     detections.sort((d0, d1) => d1.Confidence! - d0.Confidence! );
 
-    const modelName = detections[0].DetectedText!.replace(" II", "");
+    const modelName = detections[0].DetectedText!.replace(/ l/, "").replace(/ II/, "");
     console.log(`${modelName}`);
     try {
-      fs.renameSync(fullPath, baseDir + "model-proccesed/" + modelName + ".png");
+      fs.copyFileSync(fullPath, baseDir + "model-proccesed/" + modelName + ".png");
     } catch (err) {
       console.log("!!! error !!!");
       console.log(err);

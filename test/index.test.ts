@@ -4,6 +4,7 @@ import * as sut from "../src/index";
 const s3 = new AWS.S3();
 
 (async () => {
-    const res = await sut.getCharacterAverageScore();
+    // await sut.sendErrorMail(new Error());
+    const res = await sut.getCharacterList();
     console.log(res.body);
 })();
