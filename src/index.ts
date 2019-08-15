@@ -14,7 +14,9 @@ const s3: AWS.S3 = new AWS.S3();
 const athena: AWS.Athena = new AWS.Athena({
   region: "ap-northeast-1",
 });
-const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_");
+const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
+                               ? process.env.PLAY_RESULT_BUCKET.replace(/-/g, "_")
+                               : "";
 
 /*****************************************
  * Export type definitions.
@@ -89,7 +91,7 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Character average score | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.css">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
@@ -133,7 +135,7 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Character highscore | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.css">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
@@ -142,7 +144,7 @@ order by
         ${toTableRow(rs, valueGetter)}
       </table>
     </div>
-  </body>
+  </bodye
 </html>
   `, {
     "Content-Type": "text/html",
@@ -178,7 +180,7 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Score per armlevel | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.css">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
@@ -257,6 +259,52 @@ async function analyzeEvernoteNoteApiCore(event: APIGatewayEvent): Promise<APIGa
   return ok(res);
 }
 
+async function homePageCore(): Promise<APIGatewayProxyResult> {
+  return ok(`
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link href="https://use.fontawesome.com/releases/v5.6.3/css/all.css" rel="stylesheet" integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
+  </head>
+  <body>
+    <script src="https://static.time-locker.jabara.info/js/index.min.js"></script>
+    <script>
+    Elm.Index.init();
+    </script>
+  </body>
+</html>
+  `, {
+    "Content-Type": "text/html",
+  });
+}
+
+async function getCharacterListCore(): Promise<APIGatewayProxyResult> {
+  const query = `
+select
+  character
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where
+  character <> ''
+  and cardinality(armaments) <> 0
+group by
+  character
+order by
+  character
+`;
+
+  const rows = (await executeAthenaQuery(query)).Rows!;
+  rows.shift();
+  return ok(rows.map((row) => {
+    return { name: row.Data![0].VarCharValue || "" };
+  }));
+}
+
 /*****************************************
  * Export APIs.
  *****************************************/
@@ -280,6 +328,12 @@ export { analyzeEvernoteNoteApi };
 
 const updateS3Objects = handler(updateS3ObjectsCore);
 export { updateS3Objects };
+
+const homePage = handler(homePageCore);
+export { homePage };
+
+const getCharacterList = handler(getCharacterListCore);
+export { getCharacterList };
 
 /*****************************************
  * Export functions.
@@ -464,7 +518,7 @@ async function sleep(milliseconds: number): Promise<void> {
 }
 
 async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCount: number): Promise<void> {
-  if (testCount > 20) {
+  if (testCount > 40) {
     throw new Error("Timeout.");
   }
   const cfg = {
@@ -479,7 +533,7 @@ async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCou
       throw Error(JSON.stringify(res.QueryExecution!.Status));
     default: {
       console.log(`  結果: ${res.QueryExecution!.Status!.State}`);
-      await sleep(1000);
+      await sleep(500);
       return await waitAthena(queryExecutionId, testCount + 1);
     }
   }
