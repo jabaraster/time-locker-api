@@ -5,7 +5,7 @@ import { Evernote } from "evernote";
 import * as fs from "fs";
 import * as EA from "./evernote-access";
 import * as Rekognition from "./rekognition";
-import { badRequest, internalServerError, ok } from "./web-response";
+import { badRequest, internalServerError, ok, okJson } from "./web-response";
 
 const lambda: AWS.Lambda = new AWS.Lambda({
   region: "ap-northeast-1",
@@ -14,7 +14,9 @@ const s3: AWS.S3 = new AWS.S3();
 const athena: AWS.Athena = new AWS.Athena({
   region: "ap-northeast-1",
 });
-const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_");
+const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
+                                 ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
+                                 : "";
 
 /*****************************************
  * Export type definitions.
@@ -257,6 +259,62 @@ async function analyzeEvernoteNoteApiCore(event: APIGatewayEvent): Promise<APIGa
   return ok(res);
 }
 
+interface IScoreData {
+  highScore: number;
+  playCount: number;
+  averageScore: number;
+}
+interface ICharacterListElement {
+  name: string;
+  hard?: IScoreData;
+  normal?: IScoreData;
+}
+async function getCharacterListCore(): Promise<APIGatewayProxyResult> {
+  const query = `
+select
+  character
+  , mode
+  , count(*)
+  , max(score)
+  , avg(score)
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and character <> ''
+  and cardinality(armaments) > 0
+group by
+  character
+  , mode
+  `;
+  const rs = await executeAthenaQuery(query);
+  const idx: { [key: string]: ICharacterListElement } = {};
+  const ret: ICharacterListElement[] = [];
+  toRows(rs).forEach((row) => {
+    const data = row.Data!;
+    const name = data[0].VarCharValue!;
+
+    if (!(name in idx)) {
+      idx[name] = { name };
+      ret.push(idx[name]);
+    }
+    const elem = idx[name];
+    const modeData: IScoreData = {
+      playCount: parseInt(data[2].VarCharValue!, 10),
+      highScore: parseInt(data[3].VarCharValue!, 10),
+      averageScore: parseFloat(data[4].VarCharValue!),
+    };
+    if (data[1].VarCharValue === "Hard") {
+      elem.hard = modeData;
+    } else {
+      elem.normal = modeData;
+    }
+  });
+  ret.sort((e0, e1) => {
+    return e0.name.localeCompare(e1.name);
+  });
+  return okJson(ret);
+}
+
 /*****************************************
  * Export APIs.
  *****************************************/
@@ -280,6 +338,9 @@ export { analyzeEvernoteNoteApi };
 
 const updateS3Objects = handler(updateS3ObjectsCore);
 export { updateS3Objects };
+
+const getCharacterList = handler(getCharacterListCore);
+export { getCharacterList };
 
 /*****************************************
  * Export functions.
@@ -464,7 +525,7 @@ async function sleep(milliseconds: number): Promise<void> {
 }
 
 async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCount: number): Promise<void> {
-  if (testCount > 20) {
+  if (testCount > 40) {
     throw new Error("Timeout.");
   }
   const cfg = {
@@ -479,7 +540,7 @@ async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCou
       throw Error(JSON.stringify(res.QueryExecution!.Status));
     default: {
       console.log(`  結果: ${res.QueryExecution!.Status!.State}`);
-      await sleep(1000);
+      await sleep(500);
       return await waitAthena(queryExecutionId, testCount + 1);
     }
   }
@@ -547,8 +608,7 @@ ${column.Name}
 </thead>
 `;
 
-  const rows = rs.Rows!;
-  rows.shift(); // 先頭にカラム名が入っているので除く.
+  const rows = toRows(rs);
   const bodyHtml = `
 <tbody>
   ${rows.map((row) => {
@@ -644,4 +704,9 @@ function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
   } else {
     return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
   }
+}
+function toRows(rs: AWS.Athena.ResultSet): AWS.Athena.RowList {
+  const ret = rs.Rows!;
+  ret.shift();
+  return ret;
 }

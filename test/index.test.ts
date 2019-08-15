@@ -6,6 +6,6 @@ const s3 = new AWS.S3();
 
 (async () => {
     // await sut.sendErrorMail(new Error());
-    const res = await sut.getCharacterHighscore();
+    const res = await sut.getCharacterList();
     console.log(res.body);
 })();
