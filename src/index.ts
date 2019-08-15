@@ -698,7 +698,7 @@ function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
 <div class="character-image-container">
   <img src="https://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}@65x65.png"
        class="character"/>
-  <span>${d.VarCharValue}</span>
+  <span class="character-name">${d.VarCharValue}</span>
 </div>
 `;
   } else {
