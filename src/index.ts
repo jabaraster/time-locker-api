@@ -5,7 +5,7 @@ import { Evernote } from "evernote";
 import * as fs from "fs";
 import * as EA from "./evernote-access";
 import * as Rekognition from "./rekognition";
-import { badRequest, internalServerError, ok } from "./web-response";
+import { badRequest, internalServerError, ok, okJson } from "./web-response";
 
 const lambda: AWS.Lambda = new AWS.Lambda({
   region: "ap-northeast-1",
@@ -15,8 +15,8 @@ const athena: AWS.Athena = new AWS.Athena({
   region: "ap-northeast-1",
 });
 const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
-                               ? process.env.PLAY_RESULT_BUCKET.replace(/-/g, "_")
-                               : "";
+                                 ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
+                                 : "";
 
 /*****************************************
  * Export type definitions.
@@ -283,26 +283,60 @@ async function homePageCore(): Promise<APIGatewayProxyResult> {
   });
 }
 
+interface IScoreData {
+  highScore: number;
+  playCount: number;
+  averageScore: number;
+}
+interface ICharacterListElement {
+  name: string;
+  hard?: IScoreData;
+  normal?: IScoreData;
+}
 async function getCharacterListCore(): Promise<APIGatewayProxyResult> {
   const query = `
 select
   character
+  , mode
+  , count(*)
+  , max(score)
+  , avg(score)
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
-where
-  character <> ''
-  and cardinality(armaments) <> 0
+where 1=1
+  and character <> ''
+  and cardinality(armaments) > 0
 group by
   character
-order by
-  character
-`;
+  , mode
+  `;
+  const rs = await executeAthenaQuery(query);
+  const idx: { [key: string]: ICharacterListElement } = {};
+  const ret: ICharacterListElement[] = [];
+  toRows(rs).forEach((row) => {
+    const data = row.Data!;
+    const name = data[0].VarCharValue!;
 
-  const rows = (await executeAthenaQuery(query)).Rows!;
-  rows.shift();
-  return ok(rows.map((row) => {
-    return { name: row.Data![0].VarCharValue || "" };
-  }));
+    if (!(name in idx)) {
+      idx[name] = { name };
+      ret.push(idx[name]);
+    }
+    const elem = idx[name];
+    const modeData: IScoreData = {
+      playCount: parseInt(data[2].VarCharValue!, 10),
+      highScore: parseInt(data[3].VarCharValue!, 10),
+      averageScore: parseFloat(data[4].VarCharValue!),
+    };
+    if (data[1].VarCharValue === "Hard") {
+      elem.hard = modeData;
+    } else {
+      elem.normal = modeData;
+    }
+  });
+  ret.sort((e0, e1) => {
+    return e0.name.localeCompare(e1.name);
+  });
+  return okJson(ret);
 }
 
 /*****************************************
@@ -601,8 +635,7 @@ ${column.Name}
 </thead>
 `;
 
-  const rows = rs.Rows!;
-  rows.shift(); // 先頭にカラム名が入っているので除く.
+  const rows = toRows(rs);
   const bodyHtml = `
 <tbody>
   ${rows.map((row) => {
@@ -692,10 +725,16 @@ function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
 <div class="character-image-container">
   <img src="https://static.time-locker.jabara.info/img/${encodeURI(d.VarCharValue!)}@65x65.png"
        class="character"/>
-  <span>${d.VarCharValue}</span>
+  <span class="character-name">${d.VarCharValue}</span>
 </div>
 `;
   } else {
     return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
   }
+}
+
+function toRows(rs: AWS.Athena.ResultSet): AWS.Athena.RowList {
+  const ret = rs.Rows!;
+  ret.shift();
+  return ret;
 }

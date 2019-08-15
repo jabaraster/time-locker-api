@@ -8,6 +8,18 @@ export function ok(body: any, headers?: {[key: string]: string}): APIGatewayProx
   };
 }
 
+export function okJson(body: any, headers?: {[key: string]: string}): APIGatewayProxyResult {
+  if (!headers) {
+    headers = {};
+  }
+  headers["Content-Type"] = "application/json";
+  return {
+    statusCode: 200,
+    headers,
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  };
+}
+
 export function badRequest(body: any): APIGatewayProxyResult {
   return {
     statusCode: 400,
