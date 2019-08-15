@@ -203,6 +203,55 @@ Resources:
               Resource: "*"
 
   ################################
+  # API
+  ################################
+  CharacterListApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getCharacterList
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        CharacterListApiGet:
+          Type: Api
+          Properties:
+            Path: /api/character/
+            Method: get
+
+  ################################
+  # for SPA
+  ################################
+  HomePage:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.homePage
+      Runtime: nodejs10.x
+      Events:
+        HomePageGet:
+          Type: Api
+          Properties:
+            Path: /
+            Method: get
+  HomePage2:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.homePage
+      Runtime: nodejs10.x
+      Events:
+        HomePage2Get:
+          Type: Api
+          Properties:
+            Path: /character/{characterName}
+            Method: get
+
+  ################################
   # Lambda Resource
   ################################
   ArmamentsExtracter:

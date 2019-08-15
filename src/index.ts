@@ -91,7 +91,7 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Character average score | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.css">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
@@ -135,7 +135,7 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Character highscore | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.css">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
@@ -144,7 +144,7 @@ order by
         ${toTableRow(rs, valueGetter)}
       </table>
     </div>
-  </body>
+  </bodye
 </html>
   `, {
     "Content-Type": "text/html",
@@ -180,7 +180,7 @@ order by
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Score per armlevel | Jabara's Time Locker</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.css">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
     <div class="container">
@@ -257,6 +257,30 @@ async function analyzeEvernoteNoteApiCore(event: APIGatewayEvent): Promise<APIGa
   const user = await EA.getUser();
   const res = await processNote(user, noteGuid);
   return ok(res);
+}
+
+async function homePageCore(): Promise<APIGatewayProxyResult> {
+  return ok(`
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title></title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link href="https://use.fontawesome.com/releases/v5.6.3/css/all.css" rel="stylesheet" integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
+  </head>
+  <body>
+    <script src="https://static.time-locker.jabara.info/js/index.min.js"></script>
+    <script>
+    Elm.Index.init();
+    </script>
+  </body>
+</html>
+  `, {
+    "Content-Type": "text/html",
+  });
 }
 
 interface IScoreData {
@@ -338,6 +362,9 @@ export { analyzeEvernoteNoteApi };
 
 const updateS3Objects = handler(updateS3ObjectsCore);
 export { updateS3Objects };
+
+const homePage = handler(homePageCore);
+export { homePage };
 
 const getCharacterList = handler(getCharacterListCore);
 export { getCharacterList };
@@ -705,6 +732,7 @@ function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
     return c.Type === "double" ? parseInt(d.VarCharValue!, 10).toString() : d.VarCharValue!;
   }
 }
+
 function toRows(rs: AWS.Athena.ResultSet): AWS.Athena.RowList {
   const ret = rs.Rows!;
   ret.shift();
