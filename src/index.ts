@@ -139,7 +139,7 @@ order by
   </head>
   <body>
     <div class="container">
-      <h1>Character highscore</h1>
+      <h1>Character high score</h1>
       <table class="table">
         ${toTableRow(rs, valueGetter)}
       </table>
