@@ -32,9 +32,11 @@ export interface IPlayResult {
   character: string;
   mode: Rekognition.TimeLockerMode;
   score: number;
-  title: string;
   armaments: IArmaments[];
   reasons: string[];
+}
+export interface IPlayResultFromEvernote extends IPlayResult {
+  title: string;
   evernoteMeta: IEvernoteMeta;
   armamentsMeta: IArmamentBounding[];
   levelsMeta: Rekognition.IExtractArmamentsLevelResponse;
@@ -49,19 +51,57 @@ export interface IArmamentBounding {
 }
 
 /*****************************************
- * Export API declarations.
+ * Internal type definitions.
  *****************************************/
-async function updateS3ObjectsCore(): Promise<APIGatewayProxyResult> {
-  await updateS3Object((playResult) => {
-    const a = playResult as any;
-    if (!a.reasons) {
-      a.reasons = a.reason;
-    }
-  });
-  return ok({});
+interface IMessage {
+  message: string;
+}
+interface IScoreData {
+  highScore: number;
+  playCount: number;
+  averageScore: number;
+}
+interface ICharacterScoreData {
+  character: string;
+  hard?: IScoreData;
+  normal?: IScoreData;
+}
+interface ICharacterSummaryApiResponseElement {
+  scoreSummary: IScoreData;
+  scoreRanking: IPlayResult[];
+}
+interface ICharacterSummaryApiResponse {
+  character: string;
+  hard: ICharacterSummaryApiResponseElement | null;
+  normal?: ICharacterSummaryApiResponseElement | null;
+}
+interface ICharacterScoreRanking {
+  character: string;
+  mode: Rekognition.TimeLockerMode;
+  score: number;
+  scoreRank: number;
+  armaments: IArmaments[];
+  reasons: string[];
+}
+interface ImageForScoreRekognition {
+  dataInBase64: string;
+  width: number;
+  height: number;
+}
+interface IArmamentsExtracterResonse {
+  imageForLevelRekognition: ImageForScoreRekognition;
+  armaments: IArmamentBounding[];
+}
+interface IApiCoreResult<R> {
+  result?: R;
+  responseHeaders?: {[key: string]: string};
+  responseFunction: (body: any, headers?: {[key: string]: string}) => APIGatewayProxyResult;
 }
 
-async function getCharacterAverageScoreCore(): Promise<APIGatewayProxyResult> {
+/*****************************************
+ * Export API declarations.
+ *****************************************/
+async function getCharacterAverageScoreCore(): Promise<IApiCoreResult<string>> {
   const query = `
 select
   character
@@ -83,7 +123,12 @@ order by
 
   const rs = await executeAthenaQuery(query);
 
-  return ok(`
+  return {
+    responseFunction: ok,
+    responseHeaders: {
+      "Content-Type": "text/html",
+    },
+    result: `
 <!doctype html>
 <html>
   <head>
@@ -102,12 +147,11 @@ order by
     </div>
   </body>
 </html>
-  `, {
-    "Content-Type": "text/html",
-  });
+  `,
+  };
 }
 
-async function getCharacterHighscoreCore(): Promise<APIGatewayProxyResult> {
+async function getCharacterHighscoreCore(): Promise<IApiCoreResult<string>> {
   const query = `
 select
   character
@@ -127,7 +171,12 @@ order by
 
   const rs = await executeAthenaQuery(query);
 
-  return ok(`
+  return {
+    responseFunction: ok,
+    responseHeaders: {
+      "Content-Type": "text/html",
+    },
+    result: `
 <!doctype html>
 <html>
   <head>
@@ -146,12 +195,11 @@ order by
     </div>
   </bodye
 </html>
-  `, {
-    "Content-Type": "text/html",
-  });
+  `,
+  };
 }
 
-async function getScorePerArmlevelCore(): Promise<APIGatewayProxyResult> {
+async function getScorePerArmlevelCore(): Promise<IApiCoreResult<string>> {
   const query = `
 select
   arms.name
@@ -172,7 +220,12 @@ order by
 
   const rs = await executeAthenaQuery(query);
 
-  return ok(`
+  return {
+    responseFunction: ok,
+    responseHeaders: {
+      "Content-Type": "text/html",
+    },
+    result: `
 <!doctype html>
 <html>
   <head>
@@ -191,45 +244,49 @@ order by
     </div>
   </body>
 </html>
-  `, {
-    "Content-Type": "text/html",
-  });
+  `,
+  };
 }
 
-async function evernoteWebhookEndpointCore(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function evernoteWebhookEndpointCore(event: APIGatewayEvent): Promise<IApiCoreResult<IMessage>> {
   console.log(JSON.stringify(event.queryStringParameters, null, "  "));
 
   const queryStringParameters = event.queryStringParameters;
   if (!queryStringParameters) {
-    return badRequest({
-      message: "Query string is null.",
-    });
+    return {
+      result: { message: "Query string is null." },
+      responseFunction: badRequest,
+    };
   }
   const reason = queryStringParameters.reason;
   if (reason !== "create" && reason !== "update") {
-    return ok({
-      message: `No operation. Because reason is '${reason}'.`,
-    });
+    return {
+      result: { message: `No operation. Because reason is '${reason}'.` },
+      responseFunction: ok,
+    };
   }
 
   const notebookGuid = queryStringParameters.notebookGuid;
   if (!notebookGuid) {
-    return badRequest({
-      message: `GUID for notebook is empty.`,
-    });
+    return {
+      result: { message: `GUID for notebook is empty.` },
+      responseFunction: badRequest,
+    };
   }
   const notebook = await EA.getTimeLockerNotebook();
   if (notebook.guid !== notebookGuid) {
-    return ok({
-      message: `No operation. Because, note is not Time Locker note'.`,
-    });
+    return {
+      result: { message: `No operation. Because, note is not Time Locker note'.` },
+      responseFunction: ok,
+    };
   }
 
   const noteGuid = queryStringParameters.guid;
   if (!noteGuid) {
-    return badRequest({
-      message: `GUID for note is empty.`,
-    });
+    return {
+      result: { message: `GUID for note is empty.` },
+      responseFunction: badRequest,
+    };
   }
 
   const user = await EA.getUser();
@@ -238,29 +295,47 @@ async function evernoteWebhookEndpointCore(event: APIGatewayEvent): Promise<APIG
   ret.forEach((r, i) => {
     console.log(`${i + 1}: ${r.title}`);
   });
-  return ok({ message: `${ret.length} image analyzed.` });
+  return {
+    result: { message: `${ret.length} image analyzed.` },
+    responseFunction: ok,
+  };
 }
 
-async function analyzeScreenShotApiCore(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function analyzeScreenShotApiCore(event: APIGatewayEvent): Promise<IApiCoreResult<IPlayResultFromEvernote>> {
   const data = JSON.parse(event.body!).dataInBase64;
   const ret = await processImage(Buffer.from(data, "base64"));
-  return ok(ret);
+  return {
+    result: ret,
+    responseFunction: ok,
+  };
 }
 
-async function analyzeEvernoteNoteApiCore(event: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+async function analyzeEvernoteNoteApiCore(
+  event: APIGatewayEvent,
+  ): Promise<IApiCoreResult<IPlayResultFromEvernote[]|IMessage>> {
+
   if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
-    return badRequest({
-      message: "Query parameter 'noteGuid' is missing.",
-    });
+    return {
+      result: { message: "Query parameter 'noteGuid' is missing." },
+      responseFunction: badRequest,
+    };
   }
   const noteGuid = event.queryStringParameters!.noteGuid;
   const user = await EA.getUser();
   const res = await processNote(user, noteGuid);
-  return ok(res);
+  return {
+    result: res,
+    responseFunction: ok,
+  };
 }
 
-async function homePageCore(): Promise<APIGatewayProxyResult> {
-  return ok(`
+async function homePageCore(): Promise<IApiCoreResult<string>> {
+  return {
+    responseFunction: ok,
+    responseHeaders: {
+      "Content-Type": "text/html",
+    },
+    result: `
 <!doctype html>
 <html>
   <head>
@@ -278,22 +353,60 @@ async function homePageCore(): Promise<APIGatewayProxyResult> {
     </script>
   </body>
 </html>
-  `, {
-    "Content-Type": "text/html",
-  });
+  `,
+  };
 }
 
-interface IScoreData {
-  highScore: number;
-  playCount: number;
-  averageScore: number;
+async function getCharacterSummaryCore(evt: APIGatewayEvent): Promise<IApiCoreResult<ICharacterSummaryApiResponse>> {
+  const characterName = getParameter(evt.pathParameters, "characterName");
+  if (!characterName) {
+    return {
+      responseFunction: badRequest,
+    };
+  }
+
+  const rankingAsync = queryCharacterScoreRanking(characterName);
+  const scoresAsync = queryCharacterScoreSummary(characterName);
+  const ranking = await rankingAsync;
+  const scores = await scoresAsync;
+
+  const mapper: (rank: ICharacterScoreRanking) => IPlayResult = (rank) => {
+    return {
+      created: new Date(),
+      character: rank.character,
+      mode: rank.mode,
+      score: rank.score,
+      armaments: rank.armaments,
+      reasons: rank.reasons,
+    };
+  };
+  const hard = scores.hard
+    ? {
+      scoreSummary: scores.hard!,
+      scoreRanking: ranking
+        .filter((rank) => rank.mode === Rekognition.TimeLockerMode.Hard)
+        .map(mapper),
+    }
+    : null;
+  const normal = scores.normal
+    ? {
+      scoreSummary: scores.normal!,
+      scoreRanking: ranking
+        .filter((rank) => rank.mode === Rekognition.TimeLockerMode.Normal)
+        .map(mapper),
+    }
+    : null;
+  return {
+    result: {
+      character: characterName,
+      hard,
+      normal,
+    },
+    responseFunction: okJson,
+  };
 }
-interface ICharacterListElement {
-  name: string;
-  hard?: IScoreData;
-  normal?: IScoreData;
-}
-async function getCharacterListCore(): Promise<APIGatewayProxyResult> {
+
+async function getCharacterListCore(): Promise<IApiCoreResult<ICharacterScoreData[]>> {
   const query = `
 select
   character
@@ -311,32 +424,11 @@ group by
   , mode
   `;
   const rs = await executeAthenaQuery(query);
-  const idx: { [key: string]: ICharacterListElement } = {};
-  const ret: ICharacterListElement[] = [];
-  toRows(rs).forEach((row) => {
-    const data = row.Data!;
-    const name = data[0].VarCharValue!;
-
-    if (!(name in idx)) {
-      idx[name] = { name };
-      ret.push(idx[name]);
-    }
-    const elem = idx[name];
-    const modeData: IScoreData = {
-      playCount: parseInt(data[2].VarCharValue!, 10),
-      highScore: parseInt(data[3].VarCharValue!, 10),
-      averageScore: parseFloat(data[4].VarCharValue!),
-    };
-    if (data[1].VarCharValue === "Hard") {
-      elem.hard = modeData;
-    } else {
-      elem.normal = modeData;
-    }
-  });
-  ret.sort((e0, e1) => {
-    return e0.name.localeCompare(e1.name);
-  });
-  return okJson(ret);
+  const ret = rowsToCharacterScoreDataList(rs);
+  return {
+    result: ret,
+    responseFunction: okJson,
+  };
 }
 
 /*****************************************
@@ -360,19 +452,88 @@ export { analyzeScreenShotApi };
 const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApiCore);
 export { analyzeEvernoteNoteApi };
 
-const updateS3Objects = handler(updateS3ObjectsCore);
-export { updateS3Objects };
-
 const homePage = handler(homePageCore);
 export { homePage };
 
 const getCharacterList = handler(getCharacterListCore);
 export { getCharacterList };
 
+const getCharacterSummary = handler2(getCharacterSummaryCore);
+export { getCharacterSummary };
+
 /*****************************************
  * Export functions.
  *****************************************/
-export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResult[]> {
+export async function queryCharacterScoreSummary(characterName: string): Promise<ICharacterScoreData> {
+  if (!validCharacterName) {
+    console.log(`Invalid character name. -> ${characterName}`);
+    return { character: characterName };
+  }
+  const query = `
+select
+  character
+  , mode
+  , count(*)
+  , max(score)
+  , avg(score)
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and character = '${characterName}'
+  and cardinality(armaments) > 0
+group by
+  character
+  , mode
+  `;
+  const rs = await executeAthenaQuery(query);
+  const ary = rowsToCharacterScoreDataList(rs);
+  switch (ary.length) {
+    case 0: return { character: characterName };
+    case 1: return ary[0];
+    default: throw new Error(`Result is too many. expected 1, but actual [${ary.length}]`);
+  }
+}
+export async function queryCharacterScoreRanking(characterName: string): Promise<ICharacterScoreRanking[]> {
+  if (!validCharacterName) {
+    console.log(`Invalid character name. -> ${characterName}`);
+    return [];
+  }
+  const query = `
+select * from
+  (select
+    character
+    , mode
+    , score
+    , row_number() over (partition by mode order by score desc) as score_rank
+    , cast(armaments as json)
+    , cast(reasons as json)
+  from
+    "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+  where 1=1
+    and character = '${characterName}'
+    and cardinality(armaments) > 0
+  )
+where 1=1
+  and score_rank <= 5
+order by
+  mode
+  , score_rank
+  `;
+  const rs = await executeAthenaQuery(query);
+  return toRows(rs).map((row) => {
+    const data = row.Data!;
+    return {
+      character: data[0].VarCharValue!,
+      mode: data[1].VarCharValue === "Hard" ? Rekognition.TimeLockerMode.Hard : Rekognition.TimeLockerMode.Normal,
+      score: parseInt(data[2].VarCharValue!, 10),
+      scoreRank: parseInt(data[3].VarCharValue!, 10),
+      armaments: JSON.parse(data[4].VarCharValue!),
+      reasons: JSON.parse(data[5].VarCharValue!),
+    };
+  });
+}
+
+export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResultFromEvernote[]> {
   const note = await EA.getNote(noteGuid);
   if (!note.resources) {
     return [];
@@ -381,7 +542,7 @@ export async function processNote(user: Evernote.User, noteGuid: string): Promis
   return await Promise.all(resources.map(processResource(user, note)));
 }
 
-export async function processImage(imageData: Buffer): Promise<IPlayResult> {
+export async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote> {
   const [score, armaments] = await Promise.all([
     Rekognition.extractScore(imageData),
     callArmamentsExtracter(imageData),
@@ -484,17 +645,8 @@ export async function sendErrorMail(err: Error): Promise<void> {
 /*****************************************
  * Workers.
  *****************************************/
-interface ImageForScoreRekognition {
-  dataInBase64: string;
-  width: number;
-  height: number;
-}
-interface ArmamentsExtracterResonse {
-  imageForLevelRekognition: ImageForScoreRekognition;
-  armaments: IArmamentBounding[];
-}
 
-function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote.Resource) => Promise<IPlayResult> {
+function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
   return async (resource) => {
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
@@ -523,7 +675,7 @@ function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote
   };
 }
 
-async function callArmamentsExtracter(imageData: Buffer): Promise<ArmamentsExtracterResonse> {
+async function callArmamentsExtracter(imageData: Buffer): Promise<IArmamentsExtracterResonse> {
   const res = await lambda.invoke({
     FunctionName: process.env.ARMAMENT_EXTRACTER_LAMBDA_NAME!,
     InvocationType: "RequestResponse",
@@ -573,10 +725,11 @@ async function waitAthena(queryExecutionId: AWS.Athena.QueryExecutionId, testCou
   }
 }
 
-function handler(func: () => Promise<APIGatewayProxyResult>): () => Promise<APIGatewayProxyResult> {
+function handler<R>(func: () => Promise<IApiCoreResult<R>>): () => Promise<APIGatewayProxyResult> {
   return async () => {
     try {
-      return func();
+      const res = await func();
+      return res.responseFunction(res.result, res.responseHeaders);
     } catch (err) {
       console.log("!!! error !!!");
       console.log(err);
@@ -587,12 +740,13 @@ function handler(func: () => Promise<APIGatewayProxyResult>): () => Promise<APIG
   };
 }
 
-function handler2(
-  func: (e: APIGatewayEvent) => Promise<APIGatewayProxyResult>,
+function handler2<R>(
+  func: (e: APIGatewayEvent) => Promise<IApiCoreResult<R>>,
   ): (e: APIGatewayEvent) => Promise<APIGatewayProxyResult> {
   return async (e: APIGatewayEvent) => {
     try {
-      return func(e);
+      const res = await func(e);
+      return res.responseFunction(res.result, res.responseHeaders);
     } catch (err) {
       console.log("!!! error !!!");
       console.log(err);
@@ -678,7 +832,7 @@ async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> 
   return queryRes.ResultSet!;
 }
 
-async function updateS3Object(updater: (src: IPlayResult) => void): Promise<void> {
+async function updateS3Object(updater: (src: IPlayResultFromEvernote) => void): Promise<void> {
     const f = async (objs: AWS.S3.Object[], index: number): Promise<void> => {
         if (index >= objs.length) {
             return;
@@ -691,7 +845,7 @@ async function updateS3Object(updater: (src: IPlayResult) => void): Promise<void
                 Bucket: process.env.PLAY_RESULT_BUCKET!,
                 Key: obj.Key!,
             }, (err, data) => { /* dummy function */ }).promise();
-            const playResult: IPlayResult = JSON.parse(c.Body!.toString("UTF-8"));
+            const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
             updater(playResult);
             await s3.putObject({
                 Bucket: process.env.PLAY_RESULT_BUCKET!,
@@ -736,5 +890,47 @@ function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
 function toRows(rs: AWS.Athena.ResultSet): AWS.Athena.RowList {
   const ret = rs.Rows!;
   ret.shift();
+  return ret;
+}
+
+function getParameter(param: any, parameterName: string): string {
+  if (!param) {
+    return "";
+  }
+  const ret = param![parameterName];
+  return ret ? ret : "";
+}
+
+function validCharacterName(characterName: string): boolean {
+  // TODO
+  return true;
+}
+
+function rowsToCharacterScoreDataList(rs: AWS.Athena.ResultSet): ICharacterScoreData[] {
+  const idx: { [key: string]: ICharacterScoreData } = {};
+  const ret: ICharacterScoreData[] = [];
+  toRows(rs).forEach((row) => {
+    const data = row.Data!;
+    const name = data[0].VarCharValue!;
+
+    if (!(name in idx)) {
+      idx[name] = { character: name };
+      ret.push(idx[name]);
+    }
+    const elem = idx[name];
+    const modeData: IScoreData = {
+      playCount: parseInt(data[2].VarCharValue!, 10),
+      highScore: parseInt(data[3].VarCharValue!, 10),
+      averageScore: parseFloat(data[4].VarCharValue!),
+    };
+    if (data[1].VarCharValue === "Hard") {
+      elem.hard = modeData;
+    } else {
+      elem.normal = modeData;
+    }
+  });
+  ret.sort((e0, e1) => {
+    return e0.character.localeCompare(e1.character);
+  });
   return ret;
 }

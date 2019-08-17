@@ -16,7 +16,7 @@
     ]
   },
   "pathParameters": {
-    "proxy": "/path/to/resource"
+    "characterName": "PLESIO SAU"
   },
   "stageVariables": {
     "baz": "qux"
