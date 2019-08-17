@@ -16,7 +16,7 @@
     ]
   },
   "pathParameters": {
-    "characterName": "PLESIO SAU"
+    "characterName": "PLESIO%20SAUR"
   },
   "stageVariables": {
     "baz": "qux"

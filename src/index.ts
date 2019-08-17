@@ -13,6 +13,9 @@ const lambda: AWS.Lambda = new AWS.Lambda({
 const s3: AWS.S3 = new AWS.S3();
 const athena: AWS.Athena = new AWS.Athena({
   region: "ap-northeast-1",
+  params: {
+    format: "raw",
+  },
 });
 const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
                                  ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
@@ -522,12 +525,18 @@ order by
   const rs = await executeAthenaQuery(query);
   return toRows(rs).map((row) => {
     const data = row.Data!;
+    // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
+    // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
+    // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
+    const armaments = JSON.parse(data[4].VarCharValue!);
     return {
       character: data[0].VarCharValue!,
       mode: data[1].VarCharValue === "Hard" ? Rekognition.TimeLockerMode.Hard : Rekognition.TimeLockerMode.Normal,
       score: parseInt(data[2].VarCharValue!, 10),
       scoreRank: parseInt(data[3].VarCharValue!, 10),
-      armaments: JSON.parse(data[4].VarCharValue!),
+      armaments: armaments.map((arm: any) => {
+        return { name: arm[0], level: arm[1] };
+      }),
       reasons: JSON.parse(data[5].VarCharValue!),
     };
   });
@@ -898,7 +907,7 @@ function getParameter(param: any, parameterName: string): string {
     return "";
   }
   const ret = param![parameterName];
-  return ret ? ret : "";
+  return ret ? decodeURIComponent(ret) : "";
 }
 
 function validCharacterName(characterName: string): boolean {
