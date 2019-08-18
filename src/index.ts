@@ -21,6 +21,21 @@ const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
                                  ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
                                  : "";
 
+const ARMAMENT_NAMES = [
+  "TWIN_SHOT",
+  "WIDE_SHOT",
+  "SIDE_SHOT",
+  "HOMING_SHOT",
+  "BEAM",
+  "ROCKET",
+  "MINE_BOT",
+  "ICE_CANON",
+  "LINE",
+  "MISSILE",
+  "GUARD_BIT",
+  "SUPPORTER",
+  ];
+
 /*****************************************
  * Export type definitions.
  *****************************************/
@@ -31,11 +46,11 @@ export interface IEvernoteMeta {
   username?: string;
 }
 export interface IPlayResult {
-  created: Date;
+  created: string;
   character: string;
   mode: Rekognition.TimeLockerMode;
   score: number;
-  armaments: IArmaments[];
+  armaments: IArmament[];
   reasons: string[];
 }
 export interface IPlayResultFromEvernote extends IPlayResult {
@@ -44,7 +59,7 @@ export interface IPlayResultFromEvernote extends IPlayResult {
   armamentsMeta: IArmamentBounding[];
   levelsMeta: Rekognition.IExtractArmamentsLevelResponse;
 }
-export interface IArmaments {
+export interface IArmament {
   name: string;
   level: number | null;
 }
@@ -79,11 +94,12 @@ interface ICharacterSummaryApiResponse {
   normal?: ICharacterSummaryApiResponseElement | null;
 }
 interface ICharacterScoreRanking {
+  created: string;
   character: string;
   mode: Rekognition.TimeLockerMode;
   score: number;
   scoreRank: number;
-  armaments: IArmaments[];
+  armaments: IArmament[];
   reasons: string[];
 }
 interface ImageForScoreRekognition {
@@ -375,7 +391,7 @@ async function getCharacterSummaryCore(evt: APIGatewayEvent): Promise<IApiCoreRe
 
   const mapper: (rank: ICharacterScoreRanking) => IPlayResult = (rank) => {
     return {
-      created: new Date(),
+      created: rank.created,
       character: rank.character,
       mode: rank.mode,
       score: rank.score,
@@ -510,6 +526,7 @@ select * from
     , row_number() over (partition by mode order by score desc) as score_rank
     , cast(armaments as json)
     , cast(reasons as json)
+    , created
   from
     "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
   where 1=1
@@ -523,7 +540,7 @@ order by
   , score_rank
   `;
   const rs = await executeAthenaQuery(query);
-  return toRows(rs).map((row) => {
+  const ret = toRows(rs).map((row) => {
     const data = row.Data!;
     // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
     // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
@@ -534,12 +551,14 @@ order by
       mode: data[1].VarCharValue === "Hard" ? Rekognition.TimeLockerMode.Hard : Rekognition.TimeLockerMode.Normal,
       score: parseInt(data[2].VarCharValue!, 10),
       scoreRank: parseInt(data[3].VarCharValue!, 10),
-      armaments: armaments.map((arm: any) => {
+      armaments: complementArmaments(armaments.map((arm: any) => {
         return { name: arm[0], level: arm[1] };
-      }),
+      })),
       reasons: JSON.parse(data[5].VarCharValue!),
+      created: data[6].VarCharValue!,
     };
   });
+  return ret;
 }
 
 export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResultFromEvernote[]> {
@@ -566,7 +585,7 @@ export async function processImage(imageData: Buffer): Promise<IPlayResultFromEv
   levels.processedResult.sort(textDetectionComparer);
 
   return {
-    created: new Date(),
+    created: new Date().toISOString(),
     mode: score.mode,
     character: "",
     score: score.score,
@@ -655,11 +674,15 @@ export async function sendErrorMail(err: Error): Promise<void> {
  * Workers.
  *****************************************/
 
-function processResource(user: Evernote.User, note: Evernote.Note): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
+function processResource(
+  user: Evernote.User,
+  note: Evernote.Note,
+  ): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
+
   return async (resource) => {
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
-    playResult.created = new Date(note.created);
+    playResult.created = new Date(note.created).toISOString();
     playResult.character = extractCharacter(note.title),
     playResult.title = note.title;
     playResult.reasons = extractReason(note.title),
@@ -941,5 +964,19 @@ function rowsToCharacterScoreDataList(rs: AWS.Athena.ResultSet): ICharacterScore
   ret.sort((e0, e1) => {
     return e0.character.localeCompare(e1.character);
   });
+  return ret;
+}
+
+function complementArmaments(arms: IArmament[]): IArmament[] {
+  const ret: IArmament[] = [];
+  ARMAMENT_NAMES.forEach((armName) => {
+    const inParam = arms.find((arm) => arm.name === armName);
+    if (inParam) {
+      ret.push(inParam);
+    } else {
+      ret.push({ name: armName, level: 0 });
+    }
+  });
+  ret.forEach((r) => r.name = r.name.replace(/_/g, " "));
   return ret;
 }

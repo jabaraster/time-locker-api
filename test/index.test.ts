@@ -6,5 +6,9 @@ const s3 = new AWS.S3();
 
 (async () => {
     const res = await sut.queryCharacterScoreRanking("MUCUS");
-    console.log(res);
+    res.forEach((r) => {
+        console.log("----------");
+        console.log(r.mode + ":" + r.score);
+        console.log(r.armaments);
+    });
 })();
