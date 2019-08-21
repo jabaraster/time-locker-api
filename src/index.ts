@@ -102,14 +102,18 @@ interface ICharacterScoreRanking {
   armaments: IArmament[];
   reasons: string[];
 }
-interface ImageForScoreRekognition {
+interface IImageForScoreRekognition {
   dataInBase64: string;
   width: number;
   height: number;
 }
 interface IArmamentsExtracterResonse {
-  imageForLevelRekognition: ImageForScoreRekognition;
+  imageForLevelRekognition: IImageForScoreRekognition;
   armaments: IArmamentBounding[];
+}
+interface IScoreRankingApiResponse {
+  hard: ICharacterScoreRanking[];
+  normal: ICharacterScoreRanking[];
 }
 interface IApiCoreResult<R> {
   result?: R;
@@ -120,104 +124,6 @@ interface IApiCoreResult<R> {
 /*****************************************
  * Export API declarations.
  *****************************************/
-async function getCharacterAverageScoreCore(): Promise<IApiCoreResult<string>> {
-  const query = `
-select
-  character
-  , mode
-  , count(*) play_count
-  , avg(score) score_average
-from
-  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
-where
-  character <> ''
-  and cardinality(armaments) > 0
-group by
-  character
-  , mode
-order by
-  mode
-  , score_average desc
-`;
-
-  const rs = await executeAthenaQuery(query);
-
-  return {
-    responseFunction: ok,
-    responseHeaders: {
-      "Content-Type": "text/html",
-    },
-    result: `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Character average score | Jabara's Time Locker</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
-  </head>
-  <body>
-    <div class="container">
-      <h1>Character average score</h1>
-      <table class="table">
-        ${toTableRow(rs, valueGetter, [7, 2, 1, 2])}
-      </table>
-    </div>
-  </body>
-</html>
-  `,
-  };
-}
-
-async function getCharacterHighscoreCore(): Promise<IApiCoreResult<string>> {
-  const query = `
-select
-  character
-  , mode
-  , max(score) highscore
-from
-  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
-where
-  character <> ''
-group by
-  mode
-  , character
-order by
-  mode
-  , highscore desc
-`;
-
-  const rs = await executeAthenaQuery(query);
-
-  return {
-    responseFunction: ok,
-    responseHeaders: {
-      "Content-Type": "text/html",
-    },
-    result: `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Character highscore | Jabara's Time Locker</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
-  </head>
-  <body>
-    <div class="container">
-      <h1>Character high score</h1>
-      <table class="table">
-        ${toTableRow(rs, valueGetter)}
-      </table>
-    </div>
-  </bodye
-</html>
-  `,
-  };
-}
-
 async function getScorePerArmlevelCore(): Promise<IApiCoreResult<string>> {
   const query = `
 select
@@ -450,15 +356,42 @@ group by
   };
 }
 
+async function getScoreRankingCore(): Promise<IApiCoreResult<IScoreRankingApiResponse>> {
+  const query = `
+select * from
+  (select
+      character
+      , mode
+      , score
+      , row_number() over (partition by mode order by score desc) as score_rank
+      , cast(armaments as json)
+      , cast(reasons as json)
+      , created
+  from
+    "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+  where 1=1
+    and cardinality(armaments) > 0
+  )
+where 1=1
+  and score_rank <= 10
+order by
+  mode
+  , score_rank
+  `;
+  const rs = await executeAthenaQuery(query);
+  const ranking = toRows(rs).map(rowToCharacterScoreRanking);
+  return {
+    result: {
+      hard: ranking.filter((rank) => rank.mode === Rekognition.TimeLockerMode.Hard),
+      normal: ranking.filter((rank) => rank.mode == Rekognition.TimeLockerMode.Normal),
+    },
+    responseFunction: okJson,
+  };
+}
+
 /*****************************************
  * Export APIs.
  *****************************************/
-const getCharacterAverageScore = handler(getCharacterAverageScoreCore);
-export { getCharacterAverageScore };
-
-const getCharacterHighscore = handler(getCharacterHighscoreCore);
-export { getCharacterHighscore };
-
 const getScorePerArmlevel = handler(getScorePerArmlevelCore);
 export { getScorePerArmlevel };
 
@@ -479,6 +412,9 @@ export { getCharacterList };
 
 const getCharacterSummary = handler2(getCharacterSummaryCore);
 export { getCharacterSummary };
+
+const getScoreRanking = handler(getScoreRankingCore);
+export { getScoreRanking };
 
 /*****************************************
  * Export functions.
@@ -540,25 +476,7 @@ order by
   , score_rank
   `;
   const rs = await executeAthenaQuery(query);
-  const ret = toRows(rs).map((row) => {
-    const data = row.Data!;
-    // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
-    // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
-    // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
-    const armaments = JSON.parse(data[4].VarCharValue!);
-    return {
-      character: data[0].VarCharValue!,
-      mode: data[1].VarCharValue === "Hard" ? Rekognition.TimeLockerMode.Hard : Rekognition.TimeLockerMode.Normal,
-      score: parseInt(data[2].VarCharValue!, 10),
-      scoreRank: parseInt(data[3].VarCharValue!, 10),
-      armaments: complementArmaments(armaments.map((arm: any) => {
-        return { name: arm[0], level: arm[1] };
-      })),
-      reasons: JSON.parse(data[5].VarCharValue!),
-      created: data[6].VarCharValue!,
-    };
-  });
-  return ret;
+  return toRows(rs).map(rowToCharacterScoreRanking);
 }
 
 export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResultFromEvernote[]> {
@@ -980,3 +898,40 @@ function complementArmaments(arms: IArmament[]): IArmament[] {
   ret.forEach((r) => r.name = r.name.replace(/_/g, " "));
   return ret;
 }
+
+function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking {
+    const data = row.Data!;
+    // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
+    // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
+    // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
+    const armaments = JSON.parse(data[4].VarCharValue!);
+    return {
+      character: data[0].VarCharValue!,
+      mode: data[1].VarCharValue === "Hard" ? Rekognition.TimeLockerMode.Hard : Rekognition.TimeLockerMode.Normal,
+      score: parseInt(data[2].VarCharValue!, 10),
+      scoreRank: parseInt(data[3].VarCharValue!, 10),
+      armaments: complementArmaments(armaments.map((arm: any) => {
+        return { name: arm[0], level: arm[1] };
+      })),
+      reasons: JSON.parse(data[5].VarCharValue!),
+      created: data[6].VarCharValue!,
+    };
+}
+
+/*
+日毎のプレイ状況
+select
+  substring(created, 1, 10) play_date
+  , count(*) playCount
+  , max(score) highScore
+  , avg(score) averageScore
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and cardinality(armaments) > 0
+group by
+  substring(created, 1, 10)
+order by
+  play_date desc
+
+*/

@@ -104,42 +104,6 @@ Resources:
             Path: /ui/screen-shot/analyzer
             Method: get
 
-  GetCharacterAverageScore:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: time-locker-nodejs/
-      Handler: index.getCharacterAverageScore
-      Runtime: nodejs10.x
-      Environment:
-        Variables:
-          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
-          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
-      Role: !GetAtt AthenaExecutionRole.Arn
-      Events:
-        GetCharacterAverageScoreApi:
-          Type: Api
-          Properties:
-            Path: /score/character-average
-            Method: get
-
-  GetCharacterHighscore:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: time-locker-nodejs/
-      Handler: index.getCharacterHighscore
-      Runtime: nodejs10.x
-      Environment:
-        Variables:
-          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
-          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
-      Role: !GetAtt AthenaExecutionRole.Arn
-      Events:
-        GetCharacterHighscoreGet:
-          Type: Api
-          Properties:
-            Path: /score/character-high
-            Method: get
-
   GetScorePerArmlevel:
     Type: AWS::Serverless::Function
     Properties:
@@ -207,6 +171,24 @@ Resources:
           Type: Api
           Properties:
             Path: /api/character/
+            Method: get
+
+  ScoreRankingApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getScoreRanking
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        ScoreRankingApiGet:
+          Type: Api
+          Properties:
+            Path: /api/score-ranking/
             Method: get
 
   CharacterSummaryApi:
