@@ -5,6 +5,8 @@ import { Evernote } from "evernote";
 import * as fs from "fs";
 import * as EA from "./evernote-access";
 import * as Rekognition from "./rekognition";
+import { GameMode } from "./types";
+import * as Types from "./types";
 import { badRequest, internalServerError, ok, okJson } from "./web-response";
 
 const lambda: AWS.Lambda = new AWS.Lambda({
@@ -48,7 +50,7 @@ export interface IEvernoteMeta {
 export interface IPlayResult {
   created: string;
   character: string;
-  mode: Rekognition.TimeLockerMode;
+  mode: GameMode;
   score: number;
   armaments: IArmament[];
   reasons: string[];
@@ -96,7 +98,7 @@ interface ICharacterSummaryApiResponse {
 interface ICharacterScoreRanking {
   created: string;
   character: string;
-  mode: Rekognition.TimeLockerMode;
+  mode: GameMode;
   score: number;
   scoreRank: number;
   armaments: IArmament[];
@@ -115,10 +117,14 @@ interface IScoreRankingApiResponse {
   hard: ICharacterScoreRanking[];
   normal: ICharacterScoreRanking[];
 }
+interface ITotalPlayStateResponse {
+  hard: IScoreData;
+  normal: IScoreData;
+}
 interface IApiCoreResult<R> {
   result?: R;
   responseHeaders?: {[key: string]: string};
-  responseFunction: (body: any, headers?: {[key: string]: string}) => APIGatewayProxyResult;
+  responseFunction: (body: any, headers?: {[jjjjjjkey: string]: string}) => APIGatewayProxyResult;
 }
 
 /*****************************************
@@ -157,7 +163,8 @@ order by
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title>Score per armlevel | Jabara's Time Locker</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
+          integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
     <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
@@ -267,8 +274,10 @@ async function homePageCore(): Promise<IApiCoreResult<string>> {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <title></title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link href="https://use.fontawesome.com/releases/v5.6.3/css/all.css" rel="stylesheet" integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous"/>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
+          integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.6.3/css/all.css"
+          integrity="sha384-UHRtZLI+pbxtHCWp1t77Bi1L4ZtiqrqD80Kn4Z8NTSRyMA2Fd33n5dQ8lWUE00s/" crossorigin="anonymous"/>
     <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
   </head>
   <body>
@@ -309,7 +318,7 @@ async function getCharacterSummaryCore(evt: APIGatewayEvent): Promise<IApiCoreRe
     ? {
       scoreSummary: scores.hard!,
       scoreRanking: ranking
-        .filter((rank) => rank.mode === Rekognition.TimeLockerMode.Hard)
+        .filter((rank) => rank.mode === GameMode.Hard)
         .map(mapper),
     }
     : null;
@@ -317,7 +326,7 @@ async function getCharacterSummaryCore(evt: APIGatewayEvent): Promise<IApiCoreRe
     ? {
       scoreSummary: scores.normal!,
       scoreRanking: ranking
-        .filter((rank) => rank.mode === Rekognition.TimeLockerMode.Normal)
+        .filter((rank) => rank.mode === GameMode.Normal)
         .map(mapper),
     }
     : null;
@@ -382,8 +391,45 @@ order by
   const ranking = toRows(rs).map(rowToCharacterScoreRanking);
   return {
     result: {
-      hard: ranking.filter((rank) => rank.mode === Rekognition.TimeLockerMode.Hard),
-      normal: ranking.filter((rank) => rank.mode == Rekognition.TimeLockerMode.Normal),
+      hard: ranking.filter((rank) => rank.mode === GameMode.Hard),
+      normal: ranking.filter((rank) => rank.mode === GameMode.Normal),
+    },
+    responseFunction: okJson,
+  };
+}
+
+async function getTotalPlayStateCore(): Promise<IApiCoreResult<ITotalPlayStateResponse>> {
+  const query = `
+select
+  mode
+  , count(*) playCount
+  , max(score) highScore
+  , avg(score) averageScore
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and cardinality(armaments) > 0
+group by
+  mode
+order by
+  mode
+  `;
+  const rs = await executeAthenaQuery(query);
+  const scores: Array<[GameMode, IScoreData]> = toRows(rs).map((row) => {
+    const data = row.Data!;
+    const r: IScoreData = {
+      playCount: parseInt(data[1].VarCharValue!, 10),
+      highScore: parseInt(data[2].VarCharValue!, 10),
+      averageScore: parseFloat(data[3].VarCharValue!),
+    };
+    return [Types.parseGameMode(data[0].VarCharValue), r];
+  });
+  const hards = scores.filter((s) => s[0] === GameMode.Hard);
+  const normals = scores.filter((s) => s[0] === GameMode.Normal);
+  return {
+    result: {
+      hard: hards.length > 0 ? hards[0][1] : { playCount: 0, highScore: 0, averageScore: 0 },
+      normal: normals.length > 0 ? normals[0][1] : { playCount: 0, highScore: 0, averageScore: 0 },
     },
     responseFunction: okJson,
   };
@@ -415,6 +461,9 @@ export { getCharacterSummary };
 
 const getScoreRanking = handler(getScoreRankingCore);
 export { getScoreRanking };
+
+const getTotalPlayState = handler(getTotalPlayStateCore);
+export { getTotalPlayState };
 
 /*****************************************
  * Export functions.
@@ -907,7 +956,7 @@ function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking
     const armaments = JSON.parse(data[4].VarCharValue!);
     return {
       character: data[0].VarCharValue!,
-      mode: data[1].VarCharValue === "Hard" ? Rekognition.TimeLockerMode.Hard : Rekognition.TimeLockerMode.Normal,
+      mode: Types.parseGameMode(data[1].VarCharValue),
       score: parseInt(data[2].VarCharValue!, 10),
       scoreRank: parseInt(data[3].VarCharValue!, 10),
       armaments: complementArmaments(armaments.map((arm: any) => {
@@ -919,9 +968,26 @@ function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking
 }
 
 /*
+トータルプレイ状況
+select
+  mode
+  , count(*) playCount
+  , max(score) highScore
+  , avg(score) averageScore
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and cardinality(armaments) > 0
+group by
+  mode
+order by
+  mode
+*/
+/*
 日毎のプレイ状況
 select
   substring(created, 1, 10) play_date
+  , mode
   , count(*) playCount
   , max(score) highScore
   , avg(score) averageScore
@@ -931,7 +997,8 @@ where 1=1
   and cardinality(armaments) > 0
 group by
   substring(created, 1, 10)
+  , mode
 order by
   play_date desc
-
+  , mode
 */

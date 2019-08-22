@@ -1,18 +1,14 @@
 import { Rekognition } from "aws-sdk";
 import { TextDetection } from "aws-sdk/clients/rekognition";
+import { GameMode } from "./types";
 
 const rekognition = new Rekognition({
     region: "ap-northeast-1",
 });
 
-export enum TimeLockerMode {
-    Normal = "Normal",
-    Hard = "Hard",
-}
-
 export interface TimeLockerScore {
     score: number;
-    mode: TimeLockerMode;
+    mode: GameMode;
 }
 
 export interface TimeLockerArmament {
@@ -39,7 +35,7 @@ export async function extractScore(image: Buffer): Promise<TimeLockerScore> {
     const hard = res.TextDetections!.some((detection) => detection.DetectedText === "HARD");
     return {
         score: parseInt(res.TextDetections![2].DetectedText!, 10),
-        mode: hard ? TimeLockerMode.Hard : TimeLockerMode.Normal,
+        mode: hard ? GameMode.Hard : GameMode.Normal,
     };
 }
 

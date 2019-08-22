@@ -209,6 +209,24 @@ Resources:
             Path: /api/character/{characterName}
             Method: get
 
+  TotalPlayStateApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getTotalPlayState
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        TotalPlayStateApiGet:
+          Type: Api
+          Properties:
+            Path: /api/total-play-state/
+            Method: get
+
 
   ################################
   # for SPA
