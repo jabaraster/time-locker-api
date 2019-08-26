@@ -227,6 +227,23 @@ Resources:
             Path: /api/total-play-state/
             Method: get
 
+  DailyPlaySummaryApi:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.getDailyPlaySummary
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+          ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
+      Role: !GetAtt AthenaExecutionRole.Arn
+      Events:
+        DailyPlaySummaryApiGet:
+          Type: Api
+          Properties:
+            Path: /api/play-summary/daily
+            Method: get
 
   ################################
   # for SPA

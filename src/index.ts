@@ -121,6 +121,13 @@ interface ITotalPlayStateResponse {
   hard: IScoreData;
   normal: IScoreData;
 }
+
+interface IDailyPlaySummaryResponseElement extends IScoreData {
+  playDate: string;
+  mode: Types.GameMode;
+}
+type IDailyPlaySummaryResponse = IDailyPlaySummaryResponseElement[];
+
 interface IApiCoreResult<R> {
   result?: R;
   responseHeaders?: {[key: string]: string};
@@ -387,8 +394,7 @@ order by
   mode
   , score_rank
   `;
-  const rs = await executeAthenaQuery(query);
-  const ranking = toRows(rs).map(rowToCharacterScoreRanking);
+  const ranking = (await queryToRows(query)).map(rowToCharacterScoreRanking);
   return {
     result: {
       hard: ranking.filter((rank) => rank.mode === GameMode.Hard),
@@ -414,8 +420,7 @@ group by
 order by
   mode
   `;
-  const rs = await executeAthenaQuery(query);
-  const scores: Array<[GameMode, IScoreData]> = toRows(rs).map((row) => {
+  const scores: Array<[GameMode, IScoreData]> = (await queryToRows(query)).map((row) => {
     const data = row.Data!;
     const r: IScoreData = {
       playCount: parseInt(data[1].VarCharValue!, 10),
@@ -433,6 +438,41 @@ order by
     },
     responseFunction: okJson,
   };
+}
+
+async function getDailyPlaySummaryCore(): Promise<IApiCoreResult<IDailyPlaySummaryResponse>> {
+  const query = `
+select
+  substring(created, 1, 10) playDate
+  , mode
+  , count(*) playCount
+  , max(score) highScore
+  , avg(score) averageScore
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and cardinality(armaments) > 0
+group by
+  substring(created, 1, 10)
+  , mode
+order by
+  playDate desc
+  , mode
+`;
+  const ret = (await queryToRows(query)).map((row) => {
+    const data = row.Data!;
+    return {
+      playDate: data[0].VarCharValue!,
+      mode: Types.parseGameMode(data[1].VarCharValue),
+      playCount: parseInt(data[2].VarCharValue!, 10),
+      highScore: parseInt(data[3].VarCharValue!, 10),
+      averageScore: parseFloat(data[4].VarCharValue!),
+    };
+  });
+  return {
+    result: ret,
+    responseFunction: okJson,
+  }
 }
 
 /*****************************************
@@ -464,6 +504,9 @@ export { getScoreRanking };
 
 const getTotalPlayState = handler(getTotalPlayStateCore);
 export { getTotalPlayState };
+
+const getDailyPlaySummary = handler(getDailyPlaySummaryCore);
+export { getDailyPlaySummary };
 
 /*****************************************
  * Export functions.
@@ -814,6 +857,10 @@ function isNumberTypeColumn(column: AWS.Athena.ColumnInfo): boolean {
   }
 }
 
+async function queryToRows(query: string): Promise<AWS.Athena.Row[]> {
+  return toRows(await executeAthenaQuery(query));
+}
+
 async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> {
   const executionRes = await athena.startQueryExecution({
     ResultConfiguration: {
@@ -966,39 +1013,3 @@ function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking
       created: data[6].VarCharValue!,
     };
 }
-
-/*
-トータルプレイ状況
-select
-  mode
-  , count(*) playCount
-  , max(score) highScore
-  , avg(score) averageScore
-from
-  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
-where 1=1
-  and cardinality(armaments) > 0
-group by
-  mode
-order by
-  mode
-*/
-/*
-日毎のプレイ状況
-select
-  substring(created, 1, 10) play_date
-  , mode
-  , count(*) playCount
-  , max(score) highScore
-  , avg(score) averageScore
-from
-  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
-where 1=1
-  and cardinality(armaments) > 0
-group by
-  substring(created, 1, 10)
-  , mode
-order by
-  play_date desc
-  , mode
-*/
