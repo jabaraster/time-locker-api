@@ -472,7 +472,7 @@ order by
   return {
     result: ret,
     responseFunction: okJson,
-  }
+  };
 }
 
 /*****************************************
