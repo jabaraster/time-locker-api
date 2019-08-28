@@ -37,6 +37,89 @@ const ARMAMENT_NAMES = [
   "GUARD_BIT",
   "SUPPORTER",
   ];
+const CHARACTER_NAMES = {
+  "ACUTE WIDE LOCKER": "dummy",
+  "ALLIGATOR": "dummy",
+  "ALLO SAURUS": "dummy",
+  "ANT BEAR": "dummy",
+  "APPLIV WALKER": "dummy",
+  "AUTO AIM BOT": "dummy",
+  "AUTO ICE LASER": "dummy",
+  "BACK SHOOTER": "dummy",
+  "BACK SPRAY SHOOTER": "dummy",
+  "BEAM DRAGON": "dummy",
+  "BEAM PSYCHIC": "dummy",
+  "BEAM WALKER": "dummy",
+  "BIG LINE LOCKER": "dummy",
+  "BIO RIDER": "dummy",
+  "D RIFLE LOCKER": "dummy",
+  "DIFFUSER": "dummy",
+  "DIMETRODON": "dummy",
+  "DOUBLE SNIPER": "dummy",
+  "FARTER": "dummy",
+  "FLAP SNIPER": "dummy",
+  "FLAT LOCKER": "dummy",
+  "FREEZER": "dummy",
+  "GAME CAST": "dummy",
+  "GORI WRAP": "dummy",
+  "GREEN MARKER": "dummy",
+  "HOMING HOPPER": "dummy",
+  "HOMING ICE BOT": "dummy",
+  "HUMMER HEAD": "dummy",
+  "HUNTER KILLER": "dummy",
+  "HUSKY": "dummy",
+  "ICE BEAM LOCKER": "dummy",
+  "ICE LINE LOCKER": "dummy",
+  "ICE PTERANODON": "dummy",
+  "JUSTIN": "dummy",
+  "LAUNCHER": "dummy",
+  "LAUNCHER 2": "dummy",
+  "MAD LOCKER": "dummy",
+  "MINE DRIVER": "dummy",
+  "MINE LOCKER": "dummy",
+  "MINIGUN LOCKER": "dummy",
+  "MISSILE MASTER": "dummy",
+  "MISSILE MASTER 2": "dummy",
+  "MUCUS": "dummy",
+  "PANDA": "dummy",
+  "PEE RASCAL": "dummy",
+  "PENGUIN": "dummy",
+  "PLESIO SAUR": "dummy",
+  "PREDATOR": "dummy",
+  "PSYCHIC LOCKER": "dummy",
+  "PTERANODON": "dummy",
+  "QUAD LOCKER": "dummy",
+  "RIFLE LOCKER": "dummy",
+  "ROCKET LOCKER": "dummy",
+  "RODEO STAMPEDE I": "dummy",
+  "RODEO STAMPEDE Ⅱ": "dummy",
+  "SHIKIISHI LOCKER": "dummy",
+  "SIDE LOCKER": "dummy",
+  "SKATER": "dummy",
+  "SPEED-MSL DOG": "dummy",
+  "SPEED-RCT DIATRYMA": "dummy",
+  "SPRAY WALKER": "dummy",
+  "STEGO SAUR": "dummy",
+  "SUPPORTER BEAR": "dummy",
+  "T-REX": "dummy",
+  "THE DOG": "dummy",
+  "THE LOCKER": "dummy",
+  "TORTOISE": "dummy",
+  "TRACKER": "dummy",
+  "TRIKE": "dummy",
+  "TWINKIE DRONE": "dummy",
+  "WAR DRONE": "dummy",
+  "WAR FROG": "dummy",
+  "WAR MANMOTH": "dummy",
+  "WAR TOY": "dummy",
+  "WHALE": "dummy",
+  "WIDE BREAKER": "dummy",
+  "WIDE ICE LOCKER": "dummy",
+  "WIDE JUSTIN": "dummy",
+  "WIDE RHINO": "dummy",
+  "X-LASER": "dummy",
+  "X-SHOOTER": "dummy",
+};
 
 /*****************************************
  * Export type definitions.
@@ -512,7 +595,7 @@ export { getDailyPlaySummary };
  * Export functions.
  *****************************************/
 export async function queryCharacterScoreSummary(characterName: string): Promise<ICharacterScoreData> {
-  if (!validCharacterName) {
+  if (!validateCharacterName(characterName)) {
     console.log(`Invalid character name. -> ${characterName}`);
     return { character: characterName };
   }
@@ -541,7 +624,7 @@ group by
   }
 }
 export async function queryCharacterScoreRanking(characterName: string): Promise<ICharacterScoreRanking[]> {
-  if (!validCharacterName) {
+  if (!validateCharacterName(characterName)) {
     console.log(`Invalid character name. -> ${characterName}`);
     return [];
   }
@@ -947,9 +1030,8 @@ function getParameter(param: any, parameterName: string): string {
   return ret ? decodeURIComponent(ret) : "";
 }
 
-function validCharacterName(characterName: string): boolean {
-  // TODO
-  return true;
+function validateCharacterName(characterName: string): boolean {
+  return characterName in CHARACTER_NAMES;
 }
 
 function rowsToCharacterScoreDataList(rs: AWS.Athena.ResultSet): ICharacterScoreData[] {
