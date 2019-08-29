@@ -732,9 +732,16 @@ export function extractReason(title: string): string[] {
   return sentences[1].split("、");
 }
 
-function extractCharacter(title: string): string {
+export function extractCharacter(title: string): string {
   const r = title.match(/^\[(.+)\]/);
-  return r ? r[1] : "";
+  if (r) {
+    return r[1];
+  }
+  const tokens = title.split(":");
+  if (tokens.length >= 2) {
+    return tokens[0];
+  }
+  return "";
 }
 
 async function sendErrorMail(err: Error): Promise<void> {
