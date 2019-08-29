@@ -5,6 +5,5 @@ import * as sut from "../src/index";
 const s3 = new AWS.S3();
 
 (async () => {
-    const res = await sut.getTotalPlayState();
-    console.log(res.body);
+    console.log(sut.getCorrectCharacterName("teh locker"));
 })();
