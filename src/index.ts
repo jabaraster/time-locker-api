@@ -592,9 +592,9 @@ const getDailyPlaySummary = handler(getDailyPlaySummaryCore);
 export { getDailyPlaySummary };
 
 /*****************************************
- * Export functions.
+ * Workers.
  *****************************************/
-export async function queryCharacterScoreSummary(characterName: string): Promise<ICharacterScoreData> {
+async function queryCharacterScoreSummary(characterName: string): Promise<ICharacterScoreData> {
   if (!validateCharacterName(characterName)) {
     console.log(`Invalid character name. -> ${characterName}`);
     return { character: characterName };
@@ -623,7 +623,8 @@ group by
     default: throw new Error(`Result is too many. expected 1, but actual [${ary.length}]`);
   }
 }
-export async function queryCharacterScoreRanking(characterName: string): Promise<ICharacterScoreRanking[]> {
+
+async function queryCharacterScoreRanking(characterName: string): Promise<ICharacterScoreRanking[]> {
   if (!validateCharacterName(characterName)) {
     console.log(`Invalid character name. -> ${characterName}`);
     return [];
@@ -654,7 +655,7 @@ order by
   return toRows(rs).map(rowToCharacterScoreRanking);
 }
 
-export async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResultFromEvernote[]> {
+async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResultFromEvernote[]> {
   const note = await EA.getNote(noteGuid);
   if (!note.resources) {
     return [];
@@ -663,7 +664,7 @@ export async function processNote(user: Evernote.User, noteGuid: string): Promis
   return await Promise.all(resources.map(processResource(user, note)));
 }
 
-export async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote> {
+async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote> {
   const [score, armaments] = await Promise.all([
     Rekognition.extractScore(imageData),
     callArmamentsExtracter(imageData),
@@ -697,7 +698,7 @@ export async function processImage(imageData: Buffer): Promise<IPlayResultFromEv
   };
 }
 
-export function armamentBoundingComparer(a0: IArmamentBounding, a1: IArmamentBounding): number {
+function armamentBoundingComparer(a0: IArmamentBounding, a1: IArmamentBounding): number {
   const dev = a0.boundingBox.Top! - a1.boundingBox.Top!;
   if (Math.abs(dev) > 3) {
     return dev;
@@ -705,7 +706,7 @@ export function armamentBoundingComparer(a0: IArmamentBounding, a1: IArmamentBou
   return a0.boundingBox.Left! - a1.boundingBox.Left!;
 }
 
-export function textDetectionComparer(t0: TextDetection, t1: TextDetection): number {
+function textDetectionComparer(t0: TextDetection, t1: TextDetection): number {
   const b0 = t0.Geometry!.BoundingBox!;
   const b1 = t1.Geometry!.BoundingBox!;
   const dev = b0.Top! - b1.Top!;
@@ -733,10 +734,17 @@ export function extractReason(title: string): string[] {
 
 export function extractCharacter(title: string): string {
   const r = title.match(/^\[(.+)\]/);
-  return r ? r[1] : "";
+  if (r) {
+    return r[1];
+  }
+  const tokens = title.split(":");
+  if (tokens.length >= 2) {
+    return tokens[0];
+  }
+  return "";
 }
 
-export async function sendErrorMail(err: Error): Promise<void> {
+async function sendErrorMail(err: Error): Promise<void> {
   const ses = new AWS.SES({
     region: "us-east-1",
   });
@@ -763,10 +771,6 @@ export async function sendErrorMail(err: Error): Promise<void> {
   }, () => { /*dummy*/ }).promise();
 }
 
-/*****************************************
- * Workers.
- *****************************************/
-
 function processResource(
   user: Evernote.User,
   note: Evernote.Note,
@@ -776,7 +780,7 @@ function processResource(
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
     playResult.created = new Date(note.created).toISOString();
-    playResult.character = extractCharacter(note.title),
+    playResult.character = getCorrectCharacterName(extractCharacter(note.title)),
     playResult.title = note.title;
     playResult.reasons = extractReason(note.title),
     playResult.evernoteMeta = {
@@ -1094,4 +1098,76 @@ function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking
       reasons: JSON.parse(data[5].VarCharValue!),
       created: data[6].VarCharValue!,
     };
+}
+
+export function getCorrectCharacterName(src: string): string {
+  const upper = src.toUpperCase();
+  if (upper in CHARACTER_NAMES) {
+    return src;
+  }
+  return Object.keys(CHARACTER_NAMES).map((characterName) => {
+    return { characterName, distance: levenshtein(upper, characterName) };
+  }).sort((a0, a1) => a0.distance - a1.distance)[0].characterName;
+}
+
+/***
+ * https://camelmasa.hatenadiary.org/entry/20110203/1296758709
+ */
+function levenshtein(s1: string, s2: string): number {
+  // http://kevin.vanzonneveld.net
+  // +            original by: Carlos R. L. Rodrigues (http://www.jsfromhell.com)
+  // +            bugfixed by: Onno Marsman
+  // +             revised by: Andrea Giammarchi (http://webreflection.blogspot.com)
+  // + reimplemented by: Brett Zamir (http://brett-zamir.me)
+  // + reimplemented by: Alexander M Beedie
+  // *                example 1: levenshtein('Kevin van Zonneveld', 'Kevin van Sommeveld');
+  // *                returns 1: 3
+
+  if (s1 === s2) {
+      return 0;
+  }
+
+  const s1Len = s1.length;
+  const s2Len = s2.length;
+  if (s1Len === 0) {
+      return s2Len;
+  }
+  if (s2Len === 0) {
+      return s1Len;
+  }
+
+  const ss1 = s1.split("");
+
+  let v0 = new Array(s1Len + 1);
+  let v1 = new Array(s1Len + 1);
+
+  let s1Idx = 0;
+  let s2Idx = 0;
+  let cost = 0;
+  for (s1Idx = 0; s1Idx < s1Len + 1; s1Idx++) {
+      v0[s1Idx] = s1Idx;
+  }
+  let charS1 = "";
+  let charS2 = "";
+  for (s2Idx = 1; s2Idx <= s2Len; s2Idx++) {
+      v1[0] = s2Idx;
+      charS2 = s2[s2Idx - 1];
+
+      for (s1Idx = 0; s1Idx < s1Len; s1Idx++) {
+          charS1 = ss1[s1Idx];
+          cost = (charS1 === charS2) ? 0 : 1;
+          let mMin = v0[s1Idx + 1] + 1;
+          const b = v1[s1Idx] + 1;
+          const c = v0[s1Idx] + cost;
+          if (b < mMin) {
+              mMin = b; }
+          if (c < mMin) {
+              mMin = c; }
+          v1[s1Idx + 1] = mMin;
+      }
+      const vTmp = v0;
+      v0 = v1;
+      v1 = vTmp;
+  }
+  return v0[s1Len];
 }
