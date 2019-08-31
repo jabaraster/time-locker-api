@@ -152,9 +152,6 @@ Resources:
               Action: "s3:*"
               Resource: "*"
 
-  ################################
-  # API
-  ################################
   CharacterListApi:
     Type: AWS::Serverless::Function
     Properties:
@@ -245,9 +242,6 @@ Resources:
             Path: /api/play-summary/daily
             Method: get
 
-  ################################
-  # for SPA
-  ################################
   HomePage:
     Type: AWS::Serverless::Function
     Properties:
@@ -282,6 +276,16 @@ Resources:
       CodeUri: time-locker-python/
       Handler: app.extract_armaments
       Runtime: python3.7
+
+  MailTest:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.testMail
+      Runtime: nodejs10.x
+      Policies:
+        - SESCrudPolicy:
+            IdentityName: jabara.info
 
   ################################
   # S3 Resource

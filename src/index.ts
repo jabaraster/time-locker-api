@@ -218,7 +218,7 @@ interface IApiCoreResult<R> {
 }
 
 /*****************************************
- * Export API declarations.
+ * API declarations.
  *****************************************/
 async function getScorePerArmlevelCore(): Promise<IApiCoreResult<string>> {
   const query = `
@@ -590,6 +590,13 @@ export { getTotalPlayState };
 
 const getDailyPlaySummary = handler(getDailyPlaySummaryCore);
 export { getDailyPlaySummary };
+
+/*****************************************
+ * Not API, but deploy.
+ *****************************************/
+export async function testMail() {
+  await sendErrorMail(new Error());
+}
 
 /*****************************************
  * Workers.
