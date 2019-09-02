@@ -23,6 +23,10 @@ const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
                                  ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
                                  : "";
 
+const PLAY_RESULT_BUCKET_NAME = process.env.PLAY_RESULT_BUCKET
+                                ? process.env.PLAY_RESULT_BUCKET!
+                                : "";
+
 const ARMAMENT_NAMES = [
   "TWIN_SHOT",
   "WIDE_SHOT",
@@ -591,6 +595,29 @@ export { getTotalPlayState };
 const getDailyPlaySummary = handler(getDailyPlaySummaryCore);
 export { getDailyPlaySummary };
 
+export async function patch(): Promise<void> {
+  return await updateS3Object((result) => {
+    let updated = false;
+    result.armaments.forEach((arm) => {
+      switch (arm.name) {
+        case "BEAM":
+        case "GUARD_BIT":
+        case "ICE_CANON":
+        case "LINE":
+        case "MINE_BOT":
+        case "MISSILE":
+        case "ROCKET":
+        case "SUPPORTER":
+          if (arm.level === 7) {
+            arm.level = 1;
+            updated = true;
+          }
+      }
+    });
+    return updated;
+  });
+}
+
 /*****************************************
  * Workers.
  *****************************************/
@@ -687,7 +714,9 @@ async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote>
     armaments: armaments.armaments.map((arm, idx) => {
       return {
         name: arm.name,
-        level: idx < levels.processedResult.length ? parseInt(levels.processedResult[idx].DetectedText!, 10) : null,
+        level: idx < levels.processedResult.length
+               ? parseInt(levels.processedResult[idx].DetectedText!, 10)
+               : null,
       };
     }),
     reasons: [],
@@ -792,7 +821,7 @@ function processResource(
 
     try {
       await s3.putObject({
-        Bucket: process.env.PLAY_RESULT_BUCKET!,
+        Bucket: PLAY_RESULT_BUCKET_NAME,
         Key: `${resource.guid}.json`,
         Body: JSON.stringify(playResult),
       }).promise();
@@ -965,45 +994,58 @@ async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> 
   return queryRes.ResultSet!;
 }
 
-async function updateS3Object(updater: (src: IPlayResultFromEvernote) => void): Promise<void> {
-    const f = async (objs: AWS.S3.Object[], index: number): Promise<void> => {
-        if (index >= objs.length) {
-            return;
-        }
-        const obj = objs[index];
-        console.log(`-------- ${obj.Key}`);
-
-        try {
-            const c = await s3.getObject({
-                Bucket: process.env.PLAY_RESULT_BUCKET!,
-                Key: obj.Key!,
-            }, (err, data) => { /* dummy function */ }).promise();
-            const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
-            updater(playResult);
-            await s3.putObject({
-                Bucket: process.env.PLAY_RESULT_BUCKET!,
-                Key: obj.Key!,
-                Body: JSON.stringify(playResult),
-            }).promise();
-        } catch (err) {
-            console.log("!!! error !!!");
-            console.log(err);
-        }
-
-        setTimeout(() => {
-            f(objs, index + 1);
-        }, 0);
-    };
-    try {
-        const objs = await s3.listObjects({
-            Bucket: process.env.PLAY_RESULT_BUCKET!,
+async function updateS3Object(updater: (src: IPlayResultFromEvernote) => boolean): Promise<void> {
+  const MAX_KEYS = 1000;
+  const f = async (offset: number, output: AWS.S3.ListObjectsV2Output, index: number): Promise<void> => {
+    const objs = output.Contents!;
+    if (index >= objs.length) {
+      if (output.IsTruncated) {
+        const res = await s3.listObjectsV2({
+            Bucket: PLAY_RESULT_BUCKET_NAME,
+            ContinuationToken: output.NextContinuationToken,
+            MaxKeys: MAX_KEYS,
         }).promise();
-        await f(objs.Contents!, 0);
+        await f(offset + objs.length, res, 0);
+      }
+      return;
+    }
+    const obj = objs[index];
+    console.log(`--------(${offset + index + 1}/${offset + objs.length})${output.IsTruncated ? "(exist continuation)" : ""} ${obj.Key}`);
 
+    try {
+        const c = await s3.getObject({
+            Bucket: PLAY_RESULT_BUCKET_NAME,
+            Key: obj.Key!,
+        }, (err, data) => { /* dummy function */ }).promise();
+        const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
+        if (updater(playResult)) {
+          console.log(`  更新します.`);
+          await s3.putObject({
+              Bucket: PLAY_RESULT_BUCKET_NAME,
+              Key: obj.Key!,
+              Body: JSON.stringify(playResult),
+          }).promise();
+        }
     } catch (err) {
         console.log("!!! error !!!");
         console.log(err);
     }
+
+    setTimeout(() => {
+        f(offset, output, index + 1);
+    }, 0);
+  };
+  try {
+      const res = await s3.listObjectsV2({
+          Bucket: PLAY_RESULT_BUCKET_NAME,
+          MaxKeys: MAX_KEYS,
+      }).promise();
+      await f(0, res, 0);
+
+  } catch (err) {
+      console.log("!!! error !!!");
+      console.log(err);
+  }
 }
 
 function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {

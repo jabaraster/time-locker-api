@@ -282,6 +282,19 @@ Resources:
       CodeUri: time-locker-python/
       Handler: app.extract_armaments
       Runtime: python3.7
+  Patch:
+    Type: AWS::Serverless::Function
+    Timeout: 900
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.patch
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref PlayResultBucket
 
   ################################
   # S3 Resource
