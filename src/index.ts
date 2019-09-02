@@ -715,7 +715,7 @@ async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote>
       return {
         name: arm.name,
         level: idx < levels.processedResult.length
-               ? parseInt(levels.processedResult[idx].DetectedText!, 10)
+               ? correctDetectionMistake(arm.name, parseInt(levels.processedResult[idx].DetectedText!, 10))
                : null,
       };
     }),
@@ -1212,4 +1212,21 @@ function levenshtein(s1: string, s2: string): number {
       v1 = vTmp;
   }
   return v0[s1Len];
+}
+
+function correctDetectionMistake(armamentName: string, level: number): number {
+  switch (armamentName) {
+    case "BEAM":
+    case "GUARD_BIT":
+    case "ICE_CANON":
+    case "LINE":
+    case "MINE_BOT":
+    case "MISSILE":
+    case "ROCKET":
+    case "SUPPORTER":
+      if (level === 7) {
+        return 1;
+      }
+  }
+  return level;
 }
