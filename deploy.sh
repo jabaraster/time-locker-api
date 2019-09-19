@@ -1,4 +1,5 @@
 tsc \
+&& \cp -f ./package.json ./sam-app/ \
 && cd sam-app \
 && sam build \
 && sam package --template-file        ./.aws-sam/build/template.yaml \

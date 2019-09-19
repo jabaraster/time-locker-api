@@ -167,7 +167,7 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        CharacterListApiGet:
+        GetCharacterList:
           Type: Api
           Properties:
             Path: /api/character/
@@ -185,7 +185,7 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        ScoreRankingApiGet:
+        GetScoreRanking:
           Type: Api
           Properties:
             Path: /api/score-ranking/
@@ -203,7 +203,7 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        CharacterListApiGet:
+        GetCharacterList:
           Type: Api
           Properties:
             Path: /api/character/{characterName}
@@ -221,17 +221,17 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        TotalPlayStateApiGet:
+        GetTotalPlayState:
           Type: Api
           Properties:
             Path: /api/total-play-state/
             Method: get
 
-  DailyPlaySummaryApi:
+  DailyPlayResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getDailyPlaySummary
+      Handler: index.getDailyPlayResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -239,10 +239,10 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        DailyPlaySummaryApiGet:
+        GetDailyPlayResultApi:
           Type: Api
           Properties:
-            Path: /api/play-summary/daily
+            Path: /api/daily-play-result/
             Method: get
 
   ################################
@@ -255,7 +255,7 @@ Resources:
       Handler: index.homePage
       Runtime: nodejs10.x
       Events:
-        HomePageGet:
+        GetHomePage:
           Type: Api
           Properties:
             Path: /
@@ -267,10 +267,22 @@ Resources:
       Handler: index.homePage
       Runtime: nodejs10.x
       Events:
-        HomePage2Get:
+        GetHomePage2:
           Type: Api
           Properties:
             Path: /character/{characterName}
+            Method: get
+  HomePage3:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.homePage
+      Runtime: nodejs10.x
+      Events:
+        GetHomePage3:
+          Type: Api
+          Properties:
+            Path: /score-ranking
             Method: get
 
   ################################
