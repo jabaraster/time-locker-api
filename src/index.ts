@@ -21,12 +21,12 @@ const athena: AWS.Athena = new AWS.Athena({
   },
 });
 const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
-                                 ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
-                                 : "";
+  ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
+  : "";
 
 const PLAY_RESULT_BUCKET_NAME = process.env.PLAY_RESULT_BUCKET
-                                ? process.env.PLAY_RESULT_BUCKET!
-                                : "";
+  ? process.env.PLAY_RESULT_BUCKET!
+  : "";
 
 const ARMAMENT_NAMES = [
   "TWIN_SHOT",
@@ -41,7 +41,7 @@ const ARMAMENT_NAMES = [
   "MISSILE",
   "GUARD_BIT",
   "SUPPORTER",
-  ];
+];
 const CHARACTER_NAMES = {
   "ACUTE WIDE LOCKER": "dummy",
   "ALLIGATOR": "dummy",
@@ -199,8 +199,8 @@ interface IDailyPlayResultResponse {
 }
 interface IApiCoreResult<R> {
   result?: R;
-  responseHeaders?: {[key: string]: string};
-  responseFunction: (body: any, headers?: {[jjjjjjkey: string]: string}) => APIGatewayProxyResult;
+  responseHeaders?: { [key: string]: string };
+  responseFunction: (body: any, headers?: { [jjjjjjkey: string]: string }) => APIGatewayProxyResult;
 }
 
 /*****************************************
@@ -320,7 +320,7 @@ async function analyzeScreenShotApiCore(event: APIGatewayProxyEvent): Promise<IA
 
 async function analyzeEvernoteNoteApiCore(
   event: APIGatewayProxyEvent,
-  ): Promise<IApiCoreResult<IPlayResultFromEvernote[]|IMessage>> {
+): Promise<IApiCoreResult<IPlayResultFromEvernote[] | IMessage>> {
 
   if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
     return {
@@ -369,7 +369,7 @@ async function homePageCore(): Promise<IApiCoreResult<string>> {
 
 async function getCharacterSummaryCore(
   evt: APIGatewayProxyEvent,
-  ): Promise<IApiCoreResult<ICharacterData<ICharacterSummaryApiResponseElement | null>>> {
+): Promise<IApiCoreResult<ICharacterData<ICharacterSummaryApiResponseElement | null>>> {
 
   const characterName = getParameter(evt.pathParameters, "characterName");
   if (!characterName) {
@@ -756,8 +756,8 @@ async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote>
       return {
         name: arm.name,
         level: idx < levels.processedResult.length
-               ? correctDetectionMistake(arm.name, parseInt(levels.processedResult[idx].DetectedText!, 10))
-               : null,
+          ? correctDetectionMistake(arm.name, parseInt(levels.processedResult[idx].DetectedText!, 10))
+          : null,
       };
     }),
     reasons: [],
@@ -791,7 +791,7 @@ export async function screenShotAnalyzerTestPage(_: APIGatewayProxyEvent): Promi
   return ok(
     c,
     { "Content-Type": "text/html; charset=UTF-8" },
-    );
+  );
 }
 
 export function extractReason(title: string): string[] {
@@ -844,21 +844,21 @@ async function sendErrorMail(err: Error): Promise<void> {
 function processResource(
   user: Evernote.User,
   note: Evernote.Note,
-  ): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
+): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
 
   return async (resource) => {
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
     playResult.created = new Date(note.created).toISOString();
     playResult.character = getCorrectCharacterName(extractCharacter(note.title)),
-    playResult.title = note.title;
+      playResult.title = note.title;
     playResult.reasons = extractReason(note.title),
-    playResult.evernoteMeta = {
-      noteGuid: note.guid,
-      mediaGuid: resource.guid,
-      userId: user.id,
-      username: user.username,
-    };
+      playResult.evernoteMeta = {
+        noteGuid: note.guid,
+        mediaGuid: resource.guid,
+        userId: user.id,
+        username: user.username,
+      };
 
     try {
       await s3.putObject({
@@ -941,7 +941,7 @@ function handler<R>(func: () => Promise<IApiCoreResult<R>>): () => Promise<APIGa
 
 function handler2<R>(
   func: (e: APIGatewayProxyEvent) => Promise<IApiCoreResult<R>>,
-  ): (e: APIGatewayProxyEvent) => Promise<APIGatewayProxyResult> {
+): (e: APIGatewayProxyEvent) => Promise<APIGatewayProxyResult> {
   return async (e: APIGatewayProxyEvent) => {
     try {
       const res = await func(e);
@@ -960,7 +960,7 @@ function toTableRow(
   rs: AWS.Athena.ResultSet,
   valueCallback: ((data: AWS.Athena.Datum, columnInfo: AWS.Athena.ColumnInfo) => string) | null,
   columnWidth: number[] | null = null,
-  ): string {
+): string {
 
   const rsMeta = rs.ResultSetMetadata!;
   const columns = rsMeta.ColumnInfo!;
@@ -1042,9 +1042,9 @@ async function updateS3Object(updater: (src: IPlayResultFromEvernote) => boolean
     if (index >= objs.length) {
       if (output.IsTruncated) {
         const res = await s3.listObjectsV2({
-            Bucket: PLAY_RESULT_BUCKET_NAME,
-            ContinuationToken: output.NextContinuationToken,
-            MaxKeys: MAX_KEYS,
+          Bucket: PLAY_RESULT_BUCKET_NAME,
+          ContinuationToken: output.NextContinuationToken,
+          MaxKeys: MAX_KEYS,
         }).promise();
         await f(offset + objs.length, res, 0);
       }
@@ -1055,38 +1055,38 @@ async function updateS3Object(updater: (src: IPlayResultFromEvernote) => boolean
       output.IsTruncated ? "(exist continuation)" : ""} ${obj.Key}`);
 
     try {
-        const c = await s3.getObject({
-            Bucket: PLAY_RESULT_BUCKET_NAME,
-            Key: obj.Key!,
-        }, () => { /* dummy function */ }).promise();
-        const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
-        if (updater(playResult)) {
-          console.log(`  更新します.`);
-          await s3.putObject({
-              Bucket: PLAY_RESULT_BUCKET_NAME,
-              Key: obj.Key!,
-              Body: JSON.stringify(playResult),
-          }).promise();
-        }
+      const c = await s3.getObject({
+        Bucket: PLAY_RESULT_BUCKET_NAME,
+        Key: obj.Key!,
+      }, () => { /* dummy function */ }).promise();
+      const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
+      if (updater(playResult)) {
+        console.log(`  更新します.`);
+        await s3.putObject({
+          Bucket: PLAY_RESULT_BUCKET_NAME,
+          Key: obj.Key!,
+          Body: JSON.stringify(playResult),
+        }).promise();
+      }
     } catch (err) {
-        console.log("!!! error !!!");
-        console.log(err);
+      console.log("!!! error !!!");
+      console.log(err);
     }
 
     setTimeout(() => {
-        f(offset, output, index + 1);
+      f(offset, output, index + 1);
     }, 0);
   };
   try {
-      const res = await s3.listObjectsV2({
-          Bucket: PLAY_RESULT_BUCKET_NAME,
-          MaxKeys: MAX_KEYS,
-      }).promise();
-      await f(0, res, 0);
+    const res = await s3.listObjectsV2({
+      Bucket: PLAY_RESULT_BUCKET_NAME,
+      MaxKeys: MAX_KEYS,
+    }).promise();
+    await f(0, res, 0);
 
   } catch (err) {
-      console.log("!!! error !!!");
-      console.log(err);
+    console.log("!!! error !!!");
+    console.log(err);
   }
 }
 
@@ -1170,26 +1170,26 @@ function complementArmaments(arms: IArmament[]): IArmament[] {
 }
 
 function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking {
-    const data = row.Data!;
-    return {
-      character: data[0].VarCharValue!,
-      mode: Types.parseGameMode(data[1].VarCharValue),
-      score: parseInt(data[2].VarCharValue!, 10),
-      scoreRank: parseInt(data[3].VarCharValue!, 10),
-      armaments: parseArmaments(data[4].VarCharValue),
-      reasons: JSON.parse(data[5].VarCharValue!),
-      created: data[6].VarCharValue!,
-    };
+  const data = row.Data!;
+  return {
+    character: data[0].VarCharValue!,
+    mode: Types.parseGameMode(data[1].VarCharValue),
+    score: parseInt(data[2].VarCharValue!, 10),
+    scoreRank: parseInt(data[3].VarCharValue!, 10),
+    armaments: parseArmaments(data[4].VarCharValue),
+    reasons: JSON.parse(data[5].VarCharValue!),
+    created: data[6].VarCharValue!,
+  };
 }
 
 function parseArmaments(s?: string): IArmament[] {
-    // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
-    // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
-    // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
-    const armaments = JSON.parse(s!);
-    return complementArmaments(armaments.map((arm: any) => {
-      return { name: arm[0], level: arm[1] };
-    }));
+  // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
+  // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
+  // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
+  const armaments = JSON.parse(s!);
+  return complementArmaments(armaments.map((arm: any) => {
+    return { name: arm[0], level: arm[1] };
+  }));
 }
 
 export function getCorrectCharacterName(src: string): string {
@@ -1216,16 +1216,16 @@ function levenshtein(s1: string, s2: string): number {
   // *                returns 1: 3
 
   if (s1 === s2) {
-      return 0;
+    return 0;
   }
 
   const s1Len = s1.length;
   const s2Len = s2.length;
   if (s1Len === 0) {
-      return s2Len;
+    return s2Len;
   }
   if (s2Len === 0) {
-      return s1Len;
+    return s1Len;
   }
 
   const ss1 = s1.split("");
@@ -1237,29 +1237,31 @@ function levenshtein(s1: string, s2: string): number {
   let s2Idx = 0;
   let cost = 0;
   for (s1Idx = 0; s1Idx < s1Len + 1; s1Idx++) {
-      v0[s1Idx] = s1Idx;
+    v0[s1Idx] = s1Idx;
   }
   let charS1 = "";
   let charS2 = "";
   for (s2Idx = 1; s2Idx <= s2Len; s2Idx++) {
-      v1[0] = s2Idx;
-      charS2 = s2[s2Idx - 1];
+    v1[0] = s2Idx;
+    charS2 = s2[s2Idx - 1];
 
-      for (s1Idx = 0; s1Idx < s1Len; s1Idx++) {
-          charS1 = ss1[s1Idx];
-          cost = (charS1 === charS2) ? 0 : 1;
-          let mMin = v0[s1Idx + 1] + 1;
-          const b = v1[s1Idx] + 1;
-          const c = v0[s1Idx] + cost;
-          if (b < mMin) {
-              mMin = b; }
-          if (c < mMin) {
-              mMin = c; }
-          v1[s1Idx + 1] = mMin;
+    for (s1Idx = 0; s1Idx < s1Len; s1Idx++) {
+      charS1 = ss1[s1Idx];
+      cost = (charS1 === charS2) ? 0 : 1;
+      let mMin = v0[s1Idx + 1] + 1;
+      const b = v1[s1Idx] + 1;
+      const c = v0[s1Idx] + cost;
+      if (b < mMin) {
+        mMin = b;
       }
-      const vTmp = v0;
-      v0 = v1;
-      v1 = vTmp;
+      if (c < mMin) {
+        mMin = c;
+      }
+      v1[s1Idx + 1] = mMin;
+    }
+    const vTmp = v0;
+    v0 = v1;
+    v1 = vTmp;
   }
   return v0[s1Len];
 }
