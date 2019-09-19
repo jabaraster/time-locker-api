@@ -284,6 +284,18 @@ Resources:
           Properties:
             Path: /score-ranking
             Method: get
+  HomePage4:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.homePage
+      Runtime: nodejs10.x
+      Events:
+        GetHomePage4:
+          Type: Api
+          Properties:
+            Path: /daily-play-result
+            Method: get
 
   ################################
   # Lambda Resource

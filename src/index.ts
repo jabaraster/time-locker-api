@@ -425,8 +425,8 @@ select
   character
   , mode
   , count(*)
-  , max(score)
-  , avg(score)
+  , max(coalesce(score, 0))
+  , avg(coalesce(score, 0))
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -481,8 +481,8 @@ async function getTotalPlayStateCore(): Promise<IApiCoreResult<IModeData<IScoreD
 select
   mode
   , count(*) playCount
-  , max(score) highScore
-  , avg(score) averageScore
+  , max(coalesce(score, 0)) highScore
+  , avg(coalesce(score, 0)) averageScore
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -626,8 +626,8 @@ select
   substring(created, 1, 10) playDate
   , mode
   , count(*) playCount
-  , max(score) highScore
-  , avg(score) averageScore
+  , max(coalesce(score, 0)) highScore
+  , avg(coalesce(score, 0)) averageScore
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -668,8 +668,8 @@ select
   character
   , mode
   , count(*)
-  , max(score)
-  , avg(score)
+  , max(coalesce(score, 0))
+  , avg(coalesce(score, 0))
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
