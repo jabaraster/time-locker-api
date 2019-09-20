@@ -1,9 +1,10 @@
-import * as AWS from "aws-sdk";
-import * as fs from "fs";
 import * as sut from "../src/index";
 
-const s3 = new AWS.S3();
-
 (async () => {
-    await sut.patch();
+    try {
+        console.log(await sut.getDailyPlayResult());
+    } catch (e) {
+        console.log("!!! error !!!");
+        console.log(e);
+    }
 })();

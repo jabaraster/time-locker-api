@@ -141,6 +141,7 @@ interface IPlayResult {
   mode: GameMode;
   score: number;
   armaments: IArmament[];
+  missSituation: string;
   reasons: string[];
 }
 interface IPlayResultFromEvernote extends IPlayResult {
@@ -378,11 +379,10 @@ async function getCharacterSummaryCore(
     };
   }
 
-  const rankingAsync = queryCharacterScoreRanking(characterName);
-  const scoresAsync = queryCharacterScoreSummary(characterName);
-  const ranking = await rankingAsync;
-  const scores = await scoresAsync;
-
+  const [ranking, scores] = await Promise.all([
+    queryCharacterScoreRanking(characterName),
+    queryCharacterScoreSummary(characterName),
+  ]);
   const mapper: (rank: ICharacterScoreRanking) => IPlayResult = (rank) => {
     return {
       created: rank.created,
@@ -390,6 +390,7 @@ async function getCharacterSummaryCore(
       mode: rank.mode,
       score: rank.score,
       armaments: rank.armaments,
+      missSituation: rank.missSituation,
       reasons: rank.reasons,
     };
   };
@@ -448,13 +449,7 @@ async function getScoreRankingCore(): Promise<IApiCoreResult<IModeData<ICharacte
   const query = `
 select * from
   (select
-      character
-      , mode
-      , score
-      , row_number() over (partition by mode order by score desc) as score_rank
-      , cast(armaments as json)
-      , cast(reasons as json)
-      , created
+      ${SQL_COLUMNS_SCORE_RANKING}
   from
     "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
   where 1=1
@@ -513,12 +508,14 @@ order by
 }
 
 async function getDailyPlayResultCore(): Promise<IApiCoreResult<IDailyPlayResultResponse>> {
-  const summaryP = getDailyPlaySummary();
-  const detailP = getDetailPlayResults();
+  const [summary, detail] = await Promise.all([
+    getDailyPlaySummary(),
+    getDetailPlayResults(),
+  ]);
   return {
     result: {
-      summary: await summaryP,
-      detail: await detailP,
+      summary,
+      detail,
     },
     responseFunction: okJson,
   };
@@ -559,24 +556,13 @@ export { getDailyPlayResult };
 
 export async function patch(): Promise<void> {
   return await updateS3Object((result) => {
-    let updated = false;
-    result.armaments.forEach((arm) => {
-      switch (arm.name) {
-        case "BEAM":
-        case "GUARD_BIT":
-        case "ICE_CANON":
-        case "LINE":
-        case "MINE_BOT":
-        case "MISSILE":
-        case "ROCKET":
-        case "SUPPORTER":
-          if (arm.level === 7) {
-            arm.level = 1;
-            updated = true;
-          }
-      }
-    });
-    return updated;
+    const missSituation = extractMissSituation(result.title);
+    if (result.missSituation === missSituation) {
+      return false;
+    }
+    result.missSituation = missSituation;
+    console.log(`${result.missSituation} <- ${result.title}`);
+    return true;
   });
 }
 
@@ -587,12 +573,7 @@ async function getDetailPlayResults(): Promise<IModeData<IPlayResult[]>> {
   const min = `${Moment().add(-5, "day").format("YYYY-MM-DD")}T00:00:00:000Z`;
   const query = `
 select
-  character
-  , mode
-  , score
-  , cast(armaments as json)
-  , cast(reasons as json)
-  , created
+  ${SQL_COLUMNS_PLAY_RESULT}
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -603,17 +584,7 @@ order by
   , created desc
   `;
 
-  const results = (await queryToRows(query)).map((row) => {
-    const data = row.Data!;
-    return {
-      character: data[0].VarCharValue!,
-      mode: Types.parseGameMode(data[1].VarCharValue),
-      score: parseInt(data[2].VarCharValue!, 10),
-      armaments: parseArmaments(data[3].VarCharValue),
-      reasons: JSON.parse(data[4].VarCharValue!),
-      created: data[5].VarCharValue!,
-    };
-  });
+  const results = (await queryToRows(query)).map(rowToCharacterScoreRanking);
   return {
     hard: results.filter((r) => r.mode === GameMode.Hard),
     normal: results.filter((r) => r.mode === GameMode.Normal),
@@ -700,13 +671,7 @@ async function queryCharacterScoreRanking(characterName: string): Promise<IChara
   const query = `
 select * from
   (select
-    character
-    , mode
-    , score
-    , row_number() over (partition by mode order by score desc) as score_rank
-    , cast(armaments as json)
-    , cast(reasons as json)
-    , created
+   ${SQL_COLUMNS_SCORE_RANKING}
   from
     "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
   where 1=1
@@ -748,6 +713,7 @@ async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote>
 
   return {
     created: new Date().toISOString(),
+    missSituation: "",
     mode: score.mode,
     character: "",
     score: score.score,
@@ -814,6 +780,19 @@ export function extractCharacter(title: string): string {
   return "";
 }
 
+export function extractMissSituation(title: string): string {
+  const sentence = title.split("。")[0];
+  const tokens = sentence.split(":");
+  if (tokens.length >= 2) {
+    return tokens[1]; // tokens[0]がキャラ名
+  }
+  const r = sentence.match(/^\[.+\](.+)/);
+  if (r) {
+    return r[1];
+  }
+  return sentence;
+}
+
 async function sendErrorMail(err: Error): Promise<void> {
   const ses = new AWS.SES({
     region: "us-east-1",
@@ -850,15 +829,16 @@ function processResource(
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
     playResult.created = new Date(note.created).toISOString();
-    playResult.character = getCorrectCharacterName(extractCharacter(note.title)),
-      playResult.title = note.title;
-    playResult.reasons = extractReason(note.title),
-      playResult.evernoteMeta = {
-        noteGuid: note.guid,
-        mediaGuid: resource.guid,
-        userId: user.id,
-        username: user.username,
-      };
+    playResult.character = getCorrectCharacterName(extractCharacter(note.title));
+    playResult.title = note.title;
+    playResult.reasons = extractReason(note.title);
+    playResult.evernoteMeta = {
+      noteGuid: note.guid,
+      mediaGuid: resource.guid,
+      userId: user.id,
+      username: user.username,
+    };
+    playResult.missSituation = extractMissSituation(note.title);
 
     try {
       await s3.putObject({
@@ -1169,18 +1149,55 @@ function complementArmaments(arms: IArmament[]): IArmament[] {
   return ret;
 }
 
+const SQL_COLUMNS_PLAY_RESULT = `
+    created
+    , character
+    , mode
+    , coalesce(score, 0) as score
+    , missSituation
+    , cast(reasons as json)
+    , cast(armaments as json)
+`;
+const SQL_COLUMNS_SCORE_RANKING = `
+    created
+    , character
+    , mode
+    , coalesce(score, 0) as score
+    , missSituation
+    , cast(reasons as json)
+    , cast(armaments as json)
+    , row_number() over (partition by mode order by score desc) as score_rank
+`;
 function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking {
   const data = row.Data!;
+  let i = 0;
   return {
-    character: data[0].VarCharValue!,
-    mode: Types.parseGameMode(data[1].VarCharValue),
-    score: parseInt(data[2].VarCharValue!, 10),
-    scoreRank: parseInt(data[3].VarCharValue!, 10),
-    armaments: parseArmaments(data[4].VarCharValue),
-    reasons: JSON.parse(data[5].VarCharValue!),
-    created: data[6].VarCharValue!,
+    created: data[0].VarCharValue!,
+    character: data[++i].VarCharValue!,
+    mode: Types.parseGameMode(data[++i].VarCharValue),
+    score: parseInt(data[++i].VarCharValue!, 10),
+    missSituation: colValS(++i, data, ""),
+    reasons: colVal(++i, data, [], JSON.parse),
+    armaments: colVal(++i, data, [], parseArmaments),
+    scoreRank: colVal(++i, data, 0, parseInt),
   };
 }
+
+function colVal<T>(
+  idx: number,
+  data: AWS.Athena.Datum[],
+  nullValue: T,
+  valueTransformer: (s: string) => T): T {
+    return data.length <= idx ? nullValue : valueTransformer(data[idx].VarCharValue!);
+  }
+
+function colValS(
+  idx: number,
+  data: AWS.Athena.Datum[],
+  nullValue: string,
+): string {
+    return data.length <= idx ? nullValue : data[idx].VarCharValue!;
+  }
 
 function parseArmaments(s?: string): IArmament[] {
   // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
