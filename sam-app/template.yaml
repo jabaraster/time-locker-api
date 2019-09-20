@@ -167,7 +167,7 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        CharacterListApiGet:
+        GetCharacterList:
           Type: Api
           Properties:
             Path: /api/character/
@@ -185,17 +185,17 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        ScoreRankingApiGet:
+        GetScoreRanking:
           Type: Api
           Properties:
             Path: /api/score-ranking/
             Method: get
 
-  CharacterSummaryApi:
+  CharacterResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getCharacterSummary
+      Handler: index.getCharacterResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -203,17 +203,17 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        CharacterListApiGet:
+        GetCharacterResult:
           Type: Api
           Properties:
             Path: /api/character/{characterName}
             Method: get
 
-  TotalPlayStateApi:
+  TotalResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getTotalPlayState
+      Handler: index.getTotalResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -221,17 +221,17 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        TotalPlayStateApiGet:
+        GetTotalResult:
           Type: Api
           Properties:
-            Path: /api/total-play-state/
+            Path: /api/total-result/
             Method: get
 
-  DailyPlaySummaryApi:
+  DailyResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getDailyPlaySummary
+      Handler: index.getDailyResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -239,10 +239,10 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        DailyPlaySummaryApiGet:
+        GetDailyPlayResultApi:
           Type: Api
           Properties:
-            Path: /api/play-summary/daily
+            Path: /api/daily-result/
             Method: get
 
   ################################
@@ -255,7 +255,7 @@ Resources:
       Handler: index.homePage
       Runtime: nodejs10.x
       Events:
-        HomePageGet:
+        GetHomePage:
           Type: Api
           Properties:
             Path: /
@@ -267,10 +267,34 @@ Resources:
       Handler: index.homePage
       Runtime: nodejs10.x
       Events:
-        HomePage2Get:
+        GetHomePage2:
           Type: Api
           Properties:
             Path: /character/{characterName}
+            Method: get
+  HomePage3:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.homePage
+      Runtime: nodejs10.x
+      Events:
+        GetHomePage3:
+          Type: Api
+          Properties:
+            Path: /score-ranking
+            Method: get
+  HomePage4:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.homePage
+      Runtime: nodejs10.x
+      Events:
+        GetHomePage4:
+          Type: Api
+          Properties:
+            Path: /daily-result
             Method: get
 
   ################################
@@ -282,6 +306,19 @@ Resources:
       CodeUri: time-locker-python/
       Handler: app.extract_armaments
       Runtime: python3.7
+  Patch:
+    Type: AWS::Serverless::Function
+    Timeout: 900
+    Properties:
+      CodeUri: time-locker-nodejs/
+      Handler: index.patch
+      Runtime: nodejs10.x
+      Environment:
+        Variables:
+          PLAY_RESULT_BUCKET: !Ref PlayResultBucket
+      Policies:
+        - S3CrudPolicy:
+            BucketName: !Ref PlayResultBucket
 
   ################################
   # S3 Resource

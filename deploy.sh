@@ -1,4 +1,11 @@
+#!/bin/sh
+if [ "$EVERNOTE_CONSUMER_KEY" = "" ]; then
+  echo '環境変数が設定されていません。'
+  exit 1
+fi
+
 tsc \
+&& \cp -f ./package.json ./sam-app/ \
 && cd sam-app \
 && sam build \
 && sam package --template-file        ./.aws-sam/build/template.yaml \

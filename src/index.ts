@@ -1,8 +1,9 @@
-import { APIGatewayEvent, APIGatewayProxyResult } from "aws-lambda";
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import * as AWS from "aws-sdk";
 import { BoundingBox, TextDetection } from "aws-sdk/clients/rekognition";
 import { Evernote } from "evernote";
 import * as fs from "fs";
+import * as Moment from "moment-timezone";
 import * as EA from "./evernote-access";
 import * as Rekognition from "./rekognition";
 import { GameMode } from "./types";
@@ -20,8 +21,12 @@ const athena: AWS.Athena = new AWS.Athena({
   },
 });
 const PLAY_RESULT_ATHENA_TABLE = process.env.PLAY_RESULT_BUCKET
-                                 ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
-                                 : "";
+  ? process.env.PLAY_RESULT_BUCKET!.replace(/-/g, "_")
+  : "";
+
+const PLAY_RESULT_BUCKET_NAME = process.env.PLAY_RESULT_BUCKET
+  ? process.env.PLAY_RESULT_BUCKET!
+  : "";
 
 const ARMAMENT_NAMES = [
   "TWIN_SHOT",
@@ -36,7 +41,7 @@ const ARMAMENT_NAMES = [
   "MISSILE",
   "GUARD_BIT",
   "SUPPORTER",
-  ];
+];
 const CHARACTER_NAMES = {
   "ACUTE WIDE LOCKER": "dummy",
   "ALLIGATOR": "dummy",
@@ -122,71 +127,56 @@ const CHARACTER_NAMES = {
 };
 
 /*****************************************
- * Export type definitions.
+ * Type definitions.
  *****************************************/
-export interface IEvernoteMeta {
+interface IPlayResult {
+  created: string;
+  character: string;
+  mode: GameMode;
+  score: number;
+  armaments: IArmament[];
+  missSituation: string;
+  reasons: string[];
+}
+interface IEvernoteMeta {
   noteGuid?: string;
   mediaGuid?: string;
   userId?: number;
   username?: string;
 }
-export interface IPlayResult {
-  created: string;
-  character: string;
-  mode: GameMode;
-  score: number;
-  armaments: IArmament[];
-  reasons: string[];
-}
-export interface IPlayResultFromEvernote extends IPlayResult {
+interface IPlayResultFromEvernote extends IPlayResult {
   title: string;
   evernoteMeta: IEvernoteMeta;
   armamentsMeta: IArmamentBounding[];
   levelsMeta: Rekognition.IExtractArmamentsLevelResponse;
 }
-export interface IArmament {
+
+interface IArmament {
   name: string;
   level: number | null;
 }
-export interface IArmamentBounding {
+interface IArmamentBounding {
   name: string;
   boundingBox: BoundingBox;
 }
-
-/*****************************************
- * Internal type definitions.
- *****************************************/
 interface IMessage {
   message: string;
 }
-interface IScoreData {
+
+interface IModeData<T> {
+  hard: T;
+  normal: T;
+}
+interface IDaily {
+  playDate: string;
+}
+interface ISummaryScore {
+  mode: GameMode;
   highScore: number;
   playCount: number;
   averageScore: number;
 }
-interface ICharacterScoreData {
-  character: string;
-  hard?: IScoreData;
-  normal?: IScoreData;
-}
-interface ICharacterSummaryApiResponseElement {
-  scoreSummary: IScoreData;
-  scoreRanking: IPlayResult[];
-}
-interface ICharacterSummaryApiResponse {
-  character: string;
-  hard: ICharacterSummaryApiResponseElement | null;
-  normal?: ICharacterSummaryApiResponseElement | null;
-}
-interface ICharacterScoreRanking {
-  created: string;
-  character: string;
-  mode: GameMode;
-  score: number;
-  scoreRank: number;
-  armaments: IArmament[];
-  reasons: string[];
-}
+
 interface IImageForScoreRekognition {
   dataInBase64: string;
   width: number;
@@ -196,81 +186,17 @@ interface IArmamentsExtracterResonse {
   imageForLevelRekognition: IImageForScoreRekognition;
   armaments: IArmamentBounding[];
 }
-interface IScoreRankingApiResponse {
-  hard: ICharacterScoreRanking[];
-  normal: ICharacterScoreRanking[];
-}
-interface ITotalPlayStateResponse {
-  hard: IScoreData;
-  normal: IScoreData;
-}
-
-interface IDailyPlaySummaryResponseElement extends IScoreData {
-  playDate: string;
-  mode: Types.GameMode;
-}
-type IDailyPlaySummaryResponse = IDailyPlaySummaryResponseElement[];
 
 interface IApiCoreResult<R> {
   result?: R;
-  responseHeaders?: {[key: string]: string};
-  responseFunction: (body: any, headers?: {[jjjjjjkey: string]: string}) => APIGatewayProxyResult;
+  responseHeaders?: { [key: string]: string };
+  responseFunction: (body: any, headers?: { [jjjjjjkey: string]: string }) => APIGatewayProxyResult;
 }
 
 /*****************************************
- * Export API declarations.
+ * API definition.
  *****************************************/
-async function getScorePerArmlevelCore(): Promise<IApiCoreResult<string>> {
-  const query = `
-select
-  arms.name
-  , mode
-  , sum(score)/sum(arms.level) as score_per_armlevel
-from
-  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
-  cross join unnest(armaments) as t(arms)
-where
-  cardinality(armaments) > 0
-group by
-  arms.name
-  , mode
-order by
-  mode
-  , score_per_armlevel
-`;
-
-  const rs = await executeAthenaQuery(query);
-
-  return {
-    responseFunction: ok,
-    responseHeaders: {
-      "Content-Type": "text/html",
-    },
-    result: `
-<!doctype html>
-<html>
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Score per armlevel | Jabara's Time Locker</title>
-    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
-          integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
-  </head>
-  <body>
-    <div class="container">
-      <h1>Score per armlevel</h1>
-      <table class="table">
-        ${toTableRow(rs, valueGetter)}
-      </table>
-    </div>
-  </body>
-</html>
-  `,
-  };
-}
-
-async function evernoteWebhookEndpointCore(event: APIGatewayEvent): Promise<IApiCoreResult<IMessage>> {
+async function evernoteWebhookEndpointApi(event: APIGatewayProxyEvent): Promise<IApiCoreResult<IMessage>> {
   console.log(JSON.stringify(event.queryStringParameters, null, "  "));
 
   const queryStringParameters = event.queryStringParameters;
@@ -323,35 +249,7 @@ async function evernoteWebhookEndpointCore(event: APIGatewayEvent): Promise<IApi
   };
 }
 
-async function analyzeScreenShotApiCore(event: APIGatewayEvent): Promise<IApiCoreResult<IPlayResultFromEvernote>> {
-  const data = JSON.parse(event.body!).dataInBase64;
-  const ret = await processImage(Buffer.from(data, "base64"));
-  return {
-    result: ret,
-    responseFunction: ok,
-  };
-}
-
-async function analyzeEvernoteNoteApiCore(
-  event: APIGatewayEvent,
-  ): Promise<IApiCoreResult<IPlayResultFromEvernote[]|IMessage>> {
-
-  if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
-    return {
-      result: { message: "Query parameter 'noteGuid' is missing." },
-      responseFunction: badRequest,
-    };
-  }
-  const noteGuid = event.queryStringParameters!.noteGuid;
-  const user = await EA.getUser();
-  const res = await processNote(user, noteGuid);
-  return {
-    result: res,
-    responseFunction: ok,
-  };
-}
-
-async function homePageCore(): Promise<IApiCoreResult<string>> {
+async function homePageApi(): Promise<IApiCoreResult<string>> {
   return {
     responseFunction: ok,
     responseHeaders: {
@@ -381,63 +279,63 @@ async function homePageCore(): Promise<IApiCoreResult<string>> {
   };
 }
 
-async function getCharacterSummaryCore(evt: APIGatewayEvent): Promise<IApiCoreResult<ICharacterSummaryApiResponse>> {
+interface ICharacterResultResponse {
+  character: string;
+  summary: IModeData<ISummaryScore | undefined>;
+  ranking: IModeData<IPlayResult[]>;
+  detail: IModeData<IPlayResult[]>;
+}
+async function getCharacterResultApi(
+  evt: APIGatewayProxyEvent,
+): Promise<IApiCoreResult<ICharacterResultResponse>> {
+
   const characterName = getParameter(evt.pathParameters, "characterName");
   if (!characterName) {
     return {
       responseFunction: badRequest,
     };
   }
-
-  const rankingAsync = queryCharacterScoreRanking(characterName);
-  const scoresAsync = queryCharacterScoreSummary(characterName);
-  const ranking = await rankingAsync;
-  const scores = await scoresAsync;
-
-  const mapper: (rank: ICharacterScoreRanking) => IPlayResult = (rank) => {
+  if (!validateCharacterName(characterName)) {
+    console.log(`Invalid character name. -> ${characterName}`);
     return {
-      created: rank.created,
-      character: rank.character,
-      mode: rank.mode,
-      score: rank.score,
-      armaments: rank.armaments,
-      reasons: rank.reasons,
+      result: {
+        character: characterName,
+        summary: { hard: emptySummaryScore(GameMode.Hard), normal: emptySummaryScore(GameMode.Normal) },
+        ranking: { hard: [], normal: [] },
+        detail: { hard: [], normal: [] },
+      },
+      responseFunction: okJson,
     };
-  };
-  const hard = scores.hard
-    ? {
-      scoreSummary: scores.hard!,
-      scoreRanking: ranking
-        .filter((rank) => rank.mode === GameMode.Hard)
-        .map(mapper),
-    }
-    : null;
-  const normal = scores.normal
-    ? {
-      scoreSummary: scores.normal!,
-      scoreRanking: ranking
-        .filter((rank) => rank.mode === GameMode.Normal)
-        .map(mapper),
-    }
-    : null;
+  }
+
+  const [ranking, summary, detail] = await Promise.all([
+    queryCharacterScoreRanking(characterName),
+    queryCharacterSummaryScore(characterName),
+    queryCharacterDetailResult(characterName),
+  ]);
   return {
     result: {
       character: characterName,
-      hard,
-      normal,
+      summary,
+      ranking,
+      detail,
     },
     responseFunction: okJson,
   };
 }
 
-async function getCharacterListCore(): Promise<IApiCoreResult<ICharacterScoreData[]>> {
+interface ICharacterSummaryScore extends ISummaryScore {
+  character: string;
+}
+interface ICharacterListResponseElement extends IModeData<ISummaryScore | undefined> {
+  character: string;
+}
+type ICharacterListResponse = ICharacterListResponseElement[];
+async function getCharacterListApi(): Promise<IApiCoreResult<ICharacterListResponse>> {
   const query = `
 select
-  character
-  , mode
-  , count(*)
-  , max(score)
-  , avg(score)
+  ${SQL_COLUMNS_SUMMARY_SCORE.sql}
+  , character
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -446,26 +344,51 @@ where 1=1
 group by
   character
   , mode
+order by
+  character
   `;
-  const rs = await executeAthenaQuery(query);
-  const ret = rowsToCharacterScoreDataList(rs);
+
+  const convert = (summary: ICharacterSummaryScore) => {
+    return {
+      character: summary.character,
+      hard: summary.mode === GameMode.Hard ? summary : undefined,
+      normal: summary.mode === GameMode.Normal ? summary : undefined,
+    };
+  };
+  const result: ICharacterListResponse = [];
+  (await queryToRows(query)).map((row) => {
+    const summary = rowToSummaryScore(row) as ICharacterSummaryScore;
+    summary.character = row.Data![SQL_COLUMNS_SUMMARY_SCORE.columnCount].VarCharValue!;
+    return summary;
+  }).forEach((summary) => {
+    console.log(summary.character);
+    if (result.length === 0) {
+      result.push(convert(summary));
+    } else {
+      const lastElem = result[result.length - 1];
+      if (lastElem.character !== summary.character) {
+        result.push(convert(summary));
+      } else {
+        if (summary.mode === GameMode.Hard) {
+          lastElem.hard = summary;
+        } else {
+          lastElem.normal = summary;
+        }
+      }
+    }
+  });
+
   return {
-    result: ret,
+    result,
     responseFunction: okJson,
   };
 }
 
-async function getScoreRankingCore(): Promise<IApiCoreResult<IScoreRankingApiResponse>> {
+async function getScoreRankingApi(): Promise<IApiCoreResult<IModeData<IPlayResult[]>>> {
   const query = `
 select * from
   (select
-      character
-      , mode
-      , score
-      , row_number() over (partition by mode order by score desc) as score_rank
-      , cast(armaments as json)
-      , cast(reasons as json)
-      , created
+      ${SQL_COLUMNS_SCORE_RANKING.sql}
   from
     "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
   where 1=1
@@ -477,7 +400,7 @@ order by
   mode
   , score_rank
   `;
-  const ranking = (await queryToRows(query)).map(rowToCharacterScoreRanking);
+  const ranking = (await queryToRows(query)).map(rowToPlayResult);
   return {
     result: {
       hard: ranking.filter((rank) => rank.mode === GameMode.Hard),
@@ -487,13 +410,10 @@ order by
   };
 }
 
-async function getTotalPlayStateCore(): Promise<IApiCoreResult<ITotalPlayStateResponse>> {
+async function getTotalResultApi(): Promise<IApiCoreResult<IModeData<ISummaryScore>>> {
   const query = `
 select
-  mode
-  , count(*) playCount
-  , max(score) highScore
-  , avg(score) averageScore
+  ${SQL_COLUMNS_SUMMARY_SCORE.sql}
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -503,34 +423,193 @@ group by
 order by
   mode
   `;
-  const scores: Array<[GameMode, IScoreData]> = (await queryToRows(query)).map((row) => {
-    const data = row.Data!;
-    const r: IScoreData = {
-      playCount: parseInt(data[1].VarCharValue!, 10),
-      highScore: parseInt(data[2].VarCharValue!, 10),
-      averageScore: parseFloat(data[3].VarCharValue!),
-    };
-    return [Types.parseGameMode(data[0].VarCharValue), r];
-  });
-  const hards = scores.filter((s) => s[0] === GameMode.Hard);
-  const normals = scores.filter((s) => s[0] === GameMode.Normal);
+  const res = (await queryToRows(query)).map(rowToSummaryScore);
+  const hards = res.filter(hardFilter);
+  const normals = res.filter(normalFilter);
   return {
     result: {
-      hard: hards.length > 0 ? hards[0][1] : { playCount: 0, highScore: 0, averageScore: 0 },
-      normal: normals.length > 0 ? normals[0][1] : { playCount: 0, highScore: 0, averageScore: 0 },
+      hard: hards.length === 0 ? emptySummaryScore(GameMode.Hard) : hards[0],
+      normal: normals.length === 0 ? emptySummaryScore(GameMode.Normal) : normals[0],
     },
     responseFunction: okJson,
   };
 }
 
-async function getDailyPlaySummaryCore(): Promise<IApiCoreResult<IDailyPlaySummaryResponse>> {
+interface IDailySummaryScore extends ISummaryScore, IDaily {}
+interface IDailyResultResponse {
+  summary: IModeData<IDailySummaryScore[]>;
+  detail: IModeData<IPlayResult[]>;
+}
+async function getDailyResultApi(): Promise<IApiCoreResult<IDailyResultResponse>> {
+  const [summary, detail] = await Promise.all([
+    getDailySummaryScore(),
+    getDetailPlayResults(),
+  ]);
+  return {
+    result: {
+      summary,
+      detail,
+    },
+    responseFunction: okJson,
+  };
+}
+
+/*****************************************
+ * Export APIs.
+ *****************************************/
+const getScorePerArmlevel = handler(getScorePerArmlevelCore);
+export { getScorePerArmlevel };
+
+const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpointApi);
+export { evernoteWebhookEndpoint };
+
+const analyzeScreenShotApi = handler2(analyzeScreenShotApiCore);
+export { analyzeScreenShotApi };
+
+const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApiCore);
+export { analyzeEvernoteNoteApi };
+
+const homePage = handler(homePageApi);
+export { homePage };
+
+const getCharacterList = handler(getCharacterListApi);
+export { getCharacterList };
+
+const getCharacterResult = handler2(getCharacterResultApi);
+export { getCharacterResult };
+
+const getScoreRanking = handler(getScoreRankingApi);
+export { getScoreRanking };
+
+const getTotalResult = handler(getTotalResultApi);
+export { getTotalResult };
+
+const getDailyResult = handler(getDailyResultApi);
+export { getDailyResult };
+
+export async function patch(): Promise<void> {
+  return await updateS3Object((result) => {
+    const missSituation = extractMissSituation(result.title);
+    if (result.missSituation === missSituation) {
+      return false;
+    }
+    result.missSituation = missSituation;
+    console.log(`${result.missSituation} <- ${result.title}`);
+    return true;
+  });
+}
+
+/*****************************************
+ * Old API.
+ *****************************************/
+async function getScorePerArmlevelCore(): Promise<IApiCoreResult<string>> {
   const query = `
 select
-  substring(created, 1, 10) playDate
+  arms.name
   , mode
-  , count(*) playCount
-  , max(score) highScore
-  , avg(score) averageScore
+  , sum(score)/sum(arms.level) as score_per_armlevel
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+  cross join unnest(armaments) as t(arms)
+where
+  cardinality(armaments) > 0
+group by
+  arms.name
+  , mode
+order by
+  mode
+  , score_per_armlevel
+`;
+
+  const rs = await executeAthenaQuery(query);
+
+  return {
+    responseFunction: ok,
+    responseHeaders: {
+      "Content-Type": "text/html",
+    },
+    result: `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Score per armlevel | Jabara's Time Locker</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"
+          integrity="sha384-HSMxcRTRxnN+Bdg0JdbxYKrThecOKuH5zCYotlSAcp1+c8xmyTe9GYg1l9a69psu" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://static.time-locker.jabara.info/css/common.min.css">
+  </head>
+  <body>
+    <div class="container">
+      <h1>Score per armlevel</h1>
+      <table class="table">
+        ${toTableRow(rs, valueGetter)}
+      </table>
+    </div>
+  </body>
+</html>
+  `,
+  };
+}
+
+async function analyzeScreenShotApiCore(event: APIGatewayProxyEvent): Promise<IApiCoreResult<IPlayResultFromEvernote>> {
+  const data = JSON.parse(event.body!).dataInBase64;
+  const ret = await processImage(Buffer.from(data, "base64"));
+  return {
+    result: ret,
+    responseFunction: ok,
+  };
+}
+
+async function analyzeEvernoteNoteApiCore(
+  event: APIGatewayProxyEvent,
+): Promise<IApiCoreResult<IPlayResultFromEvernote[] | IMessage>> {
+
+  if (!event.queryStringParameters || !event.queryStringParameters!.noteGuid) {
+    return {
+      result: { message: "Query parameter 'noteGuid' is missing." },
+      responseFunction: badRequest,
+    };
+  }
+  const noteGuid = event.queryStringParameters!.noteGuid;
+  const user = await EA.getUser();
+  const res = await processNote(user, noteGuid);
+  return {
+    result: res,
+    responseFunction: ok,
+  };
+}
+
+/*****************************************
+ * Workers.
+ *****************************************/
+async function getDetailPlayResults(): Promise<IModeData<IPlayResult[]>> {
+  const min = `${Moment().add(-5, "day").format("YYYY-MM-DD")}T00:00:00:000Z`;
+  const query = `
+select
+  ${SQL_COLUMNS_PLAY_RESULT.sql}
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and cardinality(armaments) > 0
+  and created >= '${min}'
+order by
+  mode
+  , created desc
+  `;
+
+  const results = (await queryToRows(query)).map(rowToPlayResult);
+  return {
+    hard: results.filter((r) => r.mode === GameMode.Hard),
+    normal: results.filter((r) => r.mode === GameMode.Normal),
+  };
+}
+
+async function getDailySummaryScore(): Promise<IModeData<IDailySummaryScore[]>> {
+  const query = `
+select
+  ${SQL_COLUMNS_SUMMARY_SCORE.sql}
+  , substring(created, 1, 10) playDate
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -542,70 +621,25 @@ order by
   playDate desc
   , mode
 `;
-  const ret = (await queryToRows(query)).map((row) => {
-    const data = row.Data!;
-    return {
-      playDate: data[0].VarCharValue!,
-      mode: Types.parseGameMode(data[1].VarCharValue),
-      playCount: parseInt(data[2].VarCharValue!, 10),
-      highScore: parseInt(data[3].VarCharValue!, 10),
-      averageScore: parseFloat(data[4].VarCharValue!),
-    };
+  const res = (await queryToRows(query)).map((row) => {
+    const summary = rowToSummaryScore(row) as IDailySummaryScore;
+    summary.playDate = row.Data![SQL_COLUMNS_SUMMARY_SCORE.columnCount].VarCharValue!;
+    return summary;
   });
   return {
-    result: ret,
-    responseFunction: okJson,
+    hard: res.filter(hardFilter),
+    normal: res.filter(normalFilter),
   };
 }
 
-/*****************************************
- * Export APIs.
- *****************************************/
-const getScorePerArmlevel = handler(getScorePerArmlevelCore);
-export { getScorePerArmlevel };
-
-const evernoteWebhookEndpoint = handler2(evernoteWebhookEndpointCore);
-export { evernoteWebhookEndpoint };
-
-const analyzeScreenShotApi = handler2(analyzeScreenShotApiCore);
-export { analyzeScreenShotApi };
-
-const analyzeEvernoteNoteApi = handler2(analyzeEvernoteNoteApiCore);
-export { analyzeEvernoteNoteApi };
-
-const homePage = handler(homePageCore);
-export { homePage };
-
-const getCharacterList = handler(getCharacterListCore);
-export { getCharacterList };
-
-const getCharacterSummary = handler2(getCharacterSummaryCore);
-export { getCharacterSummary };
-
-const getScoreRanking = handler(getScoreRankingCore);
-export { getScoreRanking };
-
-const getTotalPlayState = handler(getTotalPlayStateCore);
-export { getTotalPlayState };
-
-const getDailyPlaySummary = handler(getDailyPlaySummaryCore);
-export { getDailyPlaySummary };
-
-/*****************************************
- * Workers.
- *****************************************/
-async function queryCharacterScoreSummary(characterName: string): Promise<ICharacterScoreData> {
+async function queryCharacterSummaryScore(characterName: string): Promise<IModeData<ISummaryScore | undefined>> {
   if (!validateCharacterName(characterName)) {
-    console.log(`Invalid character name. -> ${characterName}`);
-    return { character: characterName };
+    throw new Error(`Invalid character name. -> ${characterName}`);
   }
   const query = `
 select
-  character
+  ${SQL_COLUMNS_SUMMARY_SCORE.sql}
   , mode
-  , count(*)
-  , max(score)
-  , avg(score)
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
@@ -615,30 +649,23 @@ group by
   character
   , mode
   `;
-  const rs = await executeAthenaQuery(query);
-  const ary = rowsToCharacterScoreDataList(rs);
-  switch (ary.length) {
-    case 0: return { character: characterName };
-    case 1: return ary[0];
-    default: throw new Error(`Result is too many. expected 1, but actual [${ary.length}]`);
-  }
+  const res = (await queryToRows(query)).map(rowToSummaryScore);
+  const hards = res.filter(hardFilter);
+  const normals = res.filter(normalFilter);
+  return {
+    hard: hards.length === 0 ? undefined : hards[0],
+    normal: normals.length === 0 ? undefined : normals[0],
+  };
 }
 
-async function queryCharacterScoreRanking(characterName: string): Promise<ICharacterScoreRanking[]> {
+async function queryCharacterScoreRanking(characterName: string): Promise<IModeData<IPlayResult[]>> {
   if (!validateCharacterName(characterName)) {
-    console.log(`Invalid character name. -> ${characterName}`);
-    return [];
+    throw new Error(`Invalid character name. -> ${characterName}`);
   }
   const query = `
 select * from
   (select
-    character
-    , mode
-    , score
-    , row_number() over (partition by mode order by score desc) as score_rank
-    , cast(armaments as json)
-    , cast(reasons as json)
-    , created
+   ${SQL_COLUMNS_SCORE_RANKING.sql}
   from
     "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
   where 1=1
@@ -646,13 +673,39 @@ select * from
     and cardinality(armaments) > 0
   )
 where 1=1
-  and score_rank <= 5
+  and score_rank <= 20
 order by
   mode
   , score_rank
   `;
-  const rs = await executeAthenaQuery(query);
-  return toRows(rs).map(rowToCharacterScoreRanking);
+  const res = (await queryToRows(query)).map(rowToPlayResult);
+  return {
+    hard: res.filter(hardFilter),
+    normal: res.filter(normalFilter),
+  };
+}
+
+async function queryCharacterDetailResult(characterName: string) {
+  if (!validateCharacterName(characterName)) {
+    throw new Error(`Invalid character name. -> ${characterName}`);
+  }
+  const query = `
+select
+  ${SQL_COLUMNS_PLAY_RESULT.sql}
+from
+  "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
+where 1=1
+  and character = '${characterName}'
+  and cardinality(armaments) > 0
+order by
+  mode
+  , created
+  `;
+  const res = (await queryToRows(query)).map(rowToPlayResult);
+  return {
+    hard: res.filter(hardFilter),
+    normal: res.filter(normalFilter),
+  };
 }
 
 async function processNote(user: Evernote.User, noteGuid: string): Promise<IPlayResultFromEvernote[]> {
@@ -680,6 +733,7 @@ async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote>
 
   return {
     created: new Date().toISOString(),
+    missSituation: "",
     mode: score.mode,
     character: "",
     score: score.score,
@@ -687,7 +741,9 @@ async function processImage(imageData: Buffer): Promise<IPlayResultFromEvernote>
     armaments: armaments.armaments.map((arm, idx) => {
       return {
         name: arm.name,
-        level: idx < levels.processedResult.length ? parseInt(levels.processedResult[idx].DetectedText!, 10) : null,
+        level: idx < levels.processedResult.length
+          ? correctDetectionMistake(arm.name, parseInt(levels.processedResult[idx].DetectedText!, 10))
+          : null,
       };
     }),
     reasons: [],
@@ -716,12 +772,12 @@ function textDetectionComparer(t0: TextDetection, t1: TextDetection): number {
   return b0.Left! - b1.Left!;
 }
 
-export async function screenShotAnalyzerTestPage(_: APIGatewayEvent): Promise<APIGatewayProxyResult> {
+export async function screenShotAnalyzerTestPage(_: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> {
   const c = fs.readFileSync("./test.html", "UTF-8");
   return ok(
     c,
     { "Content-Type": "text/html; charset=UTF-8" },
-    );
+  );
 }
 
 export function extractReason(title: string): string[] {
@@ -742,6 +798,19 @@ export function extractCharacter(title: string): string {
     return tokens[0];
   }
   return "";
+}
+
+export function extractMissSituation(title: string): string {
+  const sentence = title.split("。")[0];
+  const tokens = sentence.split(":");
+  if (tokens.length >= 2) {
+    return tokens[1]; // tokens[0]がキャラ名
+  }
+  const r = sentence.match(/^\[.+\](.+)/);
+  if (r) {
+    return r[1];
+  }
+  return sentence;
 }
 
 async function sendErrorMail(err: Error): Promise<void> {
@@ -774,25 +843,26 @@ async function sendErrorMail(err: Error): Promise<void> {
 function processResource(
   user: Evernote.User,
   note: Evernote.Note,
-  ): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
+): (r: Evernote.Resource) => Promise<IPlayResultFromEvernote> {
 
   return async (resource) => {
     const data = await EA.getResourceData(resource.guid);
     const playResult = await processImage(Buffer.from(data));
     playResult.created = new Date(note.created).toISOString();
-    playResult.character = getCorrectCharacterName(extractCharacter(note.title)),
+    playResult.character = getCorrectCharacterName(extractCharacter(note.title));
     playResult.title = note.title;
-    playResult.reasons = extractReason(note.title),
+    playResult.reasons = extractReason(note.title);
     playResult.evernoteMeta = {
       noteGuid: note.guid,
       mediaGuid: resource.guid,
       userId: user.id,
       username: user.username,
     };
+    playResult.missSituation = extractMissSituation(note.title);
 
     try {
       await s3.putObject({
-        Bucket: process.env.PLAY_RESULT_BUCKET!,
+        Bucket: PLAY_RESULT_BUCKET_NAME,
         Key: `${resource.guid}.json`,
         Body: JSON.stringify(playResult),
       }).promise();
@@ -870,9 +940,9 @@ function handler<R>(func: () => Promise<IApiCoreResult<R>>): () => Promise<APIGa
 }
 
 function handler2<R>(
-  func: (e: APIGatewayEvent) => Promise<IApiCoreResult<R>>,
-  ): (e: APIGatewayEvent) => Promise<APIGatewayProxyResult> {
-  return async (e: APIGatewayEvent) => {
+  func: (e: APIGatewayProxyEvent) => Promise<IApiCoreResult<R>>,
+): (e: APIGatewayProxyEvent) => Promise<APIGatewayProxyResult> {
+  return async (e: APIGatewayProxyEvent) => {
     try {
       const res = await func(e);
       return res.responseFunction(res.result, res.responseHeaders);
@@ -890,7 +960,7 @@ function toTableRow(
   rs: AWS.Athena.ResultSet,
   valueCallback: ((data: AWS.Athena.Datum, columnInfo: AWS.Athena.ColumnInfo) => string) | null,
   columnWidth: number[] | null = null,
-  ): string {
+): string {
 
   const rsMeta = rs.ResultSetMetadata!;
   const columns = rsMeta.ColumnInfo!;
@@ -965,45 +1035,59 @@ async function executeAthenaQuery(query: string): Promise<AWS.Athena.ResultSet> 
   return queryRes.ResultSet!;
 }
 
-async function updateS3Object(updater: (src: IPlayResultFromEvernote) => void): Promise<void> {
-    const f = async (objs: AWS.S3.Object[], index: number): Promise<void> => {
-        if (index >= objs.length) {
-            return;
-        }
-        const obj = objs[index];
-        console.log(`-------- ${obj.Key}`);
-
-        try {
-            const c = await s3.getObject({
-                Bucket: process.env.PLAY_RESULT_BUCKET!,
-                Key: obj.Key!,
-            }, (err, data) => { /* dummy function */ }).promise();
-            const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
-            updater(playResult);
-            await s3.putObject({
-                Bucket: process.env.PLAY_RESULT_BUCKET!,
-                Key: obj.Key!,
-                Body: JSON.stringify(playResult),
-            }).promise();
-        } catch (err) {
-            console.log("!!! error !!!");
-            console.log(err);
-        }
-
-        setTimeout(() => {
-            f(objs, index + 1);
-        }, 0);
-    };
-    try {
-        const objs = await s3.listObjects({
-            Bucket: process.env.PLAY_RESULT_BUCKET!,
+async function updateS3Object(updater: (src: IPlayResultFromEvernote) => boolean): Promise<void> {
+  const MAX_KEYS = 1000;
+  const f = async (offset: number, output: AWS.S3.ListObjectsV2Output, index: number): Promise<void> => {
+    const objs = output.Contents!;
+    if (index >= objs.length) {
+      if (output.IsTruncated) {
+        const res = await s3.listObjectsV2({
+          Bucket: PLAY_RESULT_BUCKET_NAME,
+          ContinuationToken: output.NextContinuationToken,
+          MaxKeys: MAX_KEYS,
         }).promise();
-        await f(objs.Contents!, 0);
-
-    } catch (err) {
-        console.log("!!! error !!!");
-        console.log(err);
+        await f(offset + objs.length, res, 0);
+      }
+      return;
     }
+    const obj = objs[index];
+    console.log(`--------(${offset + index + 1}/${offset + objs.length})${
+      output.IsTruncated ? "(exist continuation)" : ""} ${obj.Key}`);
+
+    try {
+      const c = await s3.getObject({
+        Bucket: PLAY_RESULT_BUCKET_NAME,
+        Key: obj.Key!,
+      }, () => { /* dummy function */ }).promise();
+      const playResult: IPlayResultFromEvernote = JSON.parse(c.Body!.toString("UTF-8"));
+      if (updater(playResult)) {
+        console.log(`  更新します.`);
+        await s3.putObject({
+          Bucket: PLAY_RESULT_BUCKET_NAME,
+          Key: obj.Key!,
+          Body: JSON.stringify(playResult),
+        }).promise();
+      }
+    } catch (err) {
+      console.log("!!! error !!!");
+      console.log(err);
+    }
+
+    setTimeout(() => {
+      f(offset, output, index + 1);
+    }, 0);
+  };
+  try {
+    const res = await s3.listObjectsV2({
+      Bucket: PLAY_RESULT_BUCKET_NAME,
+      MaxKeys: MAX_KEYS,
+    }).promise();
+    await f(0, res, 0);
+
+  } catch (err) {
+    console.log("!!! error !!!");
+    console.log(err);
+  }
 }
 
 function valueGetter(d: AWS.Athena.Datum, c: AWS.Athena.ColumnInfo): string {
@@ -1038,35 +1122,6 @@ function validateCharacterName(characterName: string): boolean {
   return characterName in CHARACTER_NAMES;
 }
 
-function rowsToCharacterScoreDataList(rs: AWS.Athena.ResultSet): ICharacterScoreData[] {
-  const idx: { [key: string]: ICharacterScoreData } = {};
-  const ret: ICharacterScoreData[] = [];
-  toRows(rs).forEach((row) => {
-    const data = row.Data!;
-    const name = data[0].VarCharValue!;
-
-    if (!(name in idx)) {
-      idx[name] = { character: name };
-      ret.push(idx[name]);
-    }
-    const elem = idx[name];
-    const modeData: IScoreData = {
-      playCount: parseInt(data[2].VarCharValue!, 10),
-      highScore: parseInt(data[3].VarCharValue!, 10),
-      averageScore: parseFloat(data[4].VarCharValue!),
-    };
-    if (data[1].VarCharValue === "Hard") {
-      elem.hard = modeData;
-    } else {
-      elem.normal = modeData;
-    }
-  });
-  ret.sort((e0, e1) => {
-    return e0.character.localeCompare(e1.character);
-  });
-  return ret;
-}
-
 function complementArmaments(arms: IArmament[]): IArmament[] {
   const ret: IArmament[] = [];
   ARMAMENT_NAMES.forEach((armName) => {
@@ -1081,23 +1136,84 @@ function complementArmaments(arms: IArmament[]): IArmament[] {
   return ret;
 }
 
-function rowToCharacterScoreRanking(row: AWS.Athena.Row): ICharacterScoreRanking {
-    const data = row.Data!;
-    // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
-    // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
-    // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
-    const armaments = JSON.parse(data[4].VarCharValue!);
-    return {
-      character: data[0].VarCharValue!,
-      mode: Types.parseGameMode(data[1].VarCharValue),
-      score: parseInt(data[2].VarCharValue!, 10),
-      scoreRank: parseInt(data[3].VarCharValue!, 10),
-      armaments: complementArmaments(armaments.map((arm: any) => {
-        return { name: arm[0], level: arm[1] };
-      })),
-      reasons: JSON.parse(data[5].VarCharValue!),
-      created: data[6].VarCharValue!,
-    };
+const SQL_COLUMNS_PLAY_RESULT = { sql: `
+    created
+    , character
+    , mode
+    , coalesce(score, 0) as score
+    , missSituation
+    , cast(reasons as json)
+    , cast(armaments as json)
+`, columnCount: 7 };
+const SQL_COLUMNS_SCORE_RANKING = { sql: `
+    created
+    , character
+    , mode
+    , coalesce(score, 0) as score
+    , missSituation
+    , cast(reasons as json)
+    , cast(armaments as json)
+    , row_number() over (partition by mode order by score desc) as score_rank
+`, columnCount: 8 };
+function rowToPlayResult(row: AWS.Athena.Row): IPlayResult {
+  const data = row.Data!;
+  let i = -1;
+  return {
+    created: data[++i].VarCharValue!,
+    character: data[++i].VarCharValue!,
+    mode: Types.parseGameMode(data[++i].VarCharValue),
+    score: parseInt(data[++i].VarCharValue!, 10),
+    missSituation: colValS(++i, data, ""),
+    reasons: colVal(++i, data, [], JSON.parse),
+    armaments: colVal(++i, data, [], parseArmaments),
+  };
+}
+
+interface SqlColumns {
+  sql: string;
+  columnCount: number;
+}
+const SQL_COLUMNS_SUMMARY_SCORE = { sql: `
+    mode
+    , count(*) playCount
+    , max(coalesce(score, 0)) highScore
+    , avg(coalesce(score, 0)) averageScore
+`, columnCount: 4 };
+function rowToSummaryScore(row: AWS.Athena.Row): ISummaryScore {
+  const data = row.Data!;
+  let i = -1;
+  return {
+    mode: Types.parseGameMode(data[++i].VarCharValue),
+    playCount: parseInt(data[++i].VarCharValue!, 10),
+    highScore: parseInt(data[++i].VarCharValue!, 10),
+    averageScore: parseFloat(data[++i].VarCharValue!),
+  };
+}
+
+function colVal<T>(
+  idx: number,
+  data: AWS.Athena.Datum[],
+  nullValue: T,
+  valueTransformer: (s: string) => T): T {
+    return data.length <= idx ? nullValue : valueTransformer(data[idx].VarCharValue!);
+  }
+
+function colValS(
+  idx: number,
+  data: AWS.Athena.Datum[],
+  nullValue: string,
+): string {
+    return data.length <= idx ? nullValue : data[idx].VarCharValue!;
+  }
+
+function parseArmaments(s?: string): IArmament[] {
+  // SQL中でarmaments(型はarray<row<name:string,level:bigint>>)をjsonにキャストすると[string,number]で返って来てしまう.
+  // かと言ってキャストしないとJSONでない文字列が返って来るので使えない.
+  // aws-sdkのなんともイヤな仕様. 将来の仕様拡充を期待したい.
+  const armaments = JSON.parse(s!);
+  return complementArmaments(armaments.map((arm: any) => {
+    return { name: arm[0], level: arm[1] };
+  }));
 }
 
 export function getCorrectCharacterName(src: string): string {
@@ -1124,16 +1240,16 @@ function levenshtein(s1: string, s2: string): number {
   // *                returns 1: 3
 
   if (s1 === s2) {
-      return 0;
+    return 0;
   }
 
   const s1Len = s1.length;
   const s2Len = s2.length;
   if (s1Len === 0) {
-      return s2Len;
+    return s2Len;
   }
   if (s2Len === 0) {
-      return s1Len;
+    return s1Len;
   }
 
   const ss1 = s1.split("");
@@ -1145,29 +1261,63 @@ function levenshtein(s1: string, s2: string): number {
   let s2Idx = 0;
   let cost = 0;
   for (s1Idx = 0; s1Idx < s1Len + 1; s1Idx++) {
-      v0[s1Idx] = s1Idx;
+    v0[s1Idx] = s1Idx;
   }
   let charS1 = "";
   let charS2 = "";
   for (s2Idx = 1; s2Idx <= s2Len; s2Idx++) {
-      v1[0] = s2Idx;
-      charS2 = s2[s2Idx - 1];
+    v1[0] = s2Idx;
+    charS2 = s2[s2Idx - 1];
 
-      for (s1Idx = 0; s1Idx < s1Len; s1Idx++) {
-          charS1 = ss1[s1Idx];
-          cost = (charS1 === charS2) ? 0 : 1;
-          let mMin = v0[s1Idx + 1] + 1;
-          const b = v1[s1Idx] + 1;
-          const c = v0[s1Idx] + cost;
-          if (b < mMin) {
-              mMin = b; }
-          if (c < mMin) {
-              mMin = c; }
-          v1[s1Idx + 1] = mMin;
+    for (s1Idx = 0; s1Idx < s1Len; s1Idx++) {
+      charS1 = ss1[s1Idx];
+      cost = (charS1 === charS2) ? 0 : 1;
+      let mMin = v0[s1Idx + 1] + 1;
+      const b = v1[s1Idx] + 1;
+      const c = v0[s1Idx] + cost;
+      if (b < mMin) {
+        mMin = b;
       }
-      const vTmp = v0;
-      v0 = v1;
-      v1 = vTmp;
+      if (c < mMin) {
+        mMin = c;
+      }
+      v1[s1Idx + 1] = mMin;
+    }
+    const vTmp = v0;
+    v0 = v1;
+    v1 = vTmp;
   }
   return v0[s1Len];
+}
+
+function correctDetectionMistake(armamentName: string, level: number): number {
+  switch (armamentName) {
+    case "BEAM":
+    case "GUARD_BIT":
+    case "ICE_CANON":
+    case "LINE":
+    case "MINE_BOT":
+    case "MISSILE":
+    case "ROCKET":
+    case "SUPPORTER":
+      if (level === 7) {
+        return 1;
+      }
+  }
+  return level;
+}
+
+function hardFilter(e: any): boolean {
+  return e.mode === GameMode.Hard;
+}
+function normalFilter(e: any): boolean {
+  return e.mode === GameMode.Normal;
+}
+function emptySummaryScore(mode: GameMode): ISummaryScore {
+  return {
+    mode,
+    playCount: 0,
+    highScore: 0,
+    averageScore: 0,
+  };
 }
