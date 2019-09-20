@@ -191,11 +191,11 @@ Resources:
             Path: /api/score-ranking/
             Method: get
 
-  CharacterSummaryApi:
+  CharacterResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getCharacterSummary
+      Handler: index.getCharacterResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -203,17 +203,17 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        GetCharacterList:
+        GetCharacterResult:
           Type: Api
           Properties:
             Path: /api/character/{characterName}
             Method: get
 
-  TotalPlayStateApi:
+  TotalResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getTotalPlayState
+      Handler: index.getTotalResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -221,17 +221,17 @@ Resources:
           ATHENA_RESULT_BUCKET: !Ref AthenaResultBucket
       Role: !GetAtt AthenaExecutionRole.Arn
       Events:
-        GetTotalPlayState:
+        GetTotalResult:
           Type: Api
           Properties:
-            Path: /api/total-play-state/
+            Path: /api/total-result/
             Method: get
 
-  DailyPlayResultApi:
+  DailyResultApi:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: time-locker-nodejs/
-      Handler: index.getDailyPlayResult
+      Handler: index.getDailyResult
       Runtime: nodejs10.x
       Environment:
         Variables:
@@ -242,7 +242,7 @@ Resources:
         GetDailyPlayResultApi:
           Type: Api
           Properties:
-            Path: /api/daily-play-result/
+            Path: /api/daily-result/
             Method: get
 
   ################################
@@ -294,7 +294,7 @@ Resources:
         GetHomePage4:
           Type: Api
           Properties:
-            Path: /daily-play-result
+            Path: /daily-result
             Method: get
 
   ################################
