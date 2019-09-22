@@ -1,7 +1,6 @@
 import { Rekognition } from "aws-sdk";
 import { TextDetection } from "aws-sdk/clients/rekognition";
 import { GameMode } from "./types";
-import { INSPECT_MAX_BYTES } from "buffer";
 
 const rekognition = new Rekognition({
     region: "ap-northeast-1",
@@ -97,9 +96,9 @@ export async function extractArmamentsLevel(image: Buffer): Promise<IExtractArma
 }
 
 if (require.main === module) {
-  (async () => {
-      const path = "/Users/jabaraster/save/Time Locker/5B41A792-3EB2-4242-B1D8-D8A41F6238DC.jpg";
-      const res = await extractScore(require("fs").readFileSync(path));
-      console.log(res);
-  })();
+    (async () => {
+        const path = "/Users/jabaraster/save/Time Locker/5B41A792-3EB2-4242-B1D8-D8A41F6238DC.jpg";
+        const res = await extractScore(require("fs").readFileSync(path));
+        console.log(res);
+    })();
 }
