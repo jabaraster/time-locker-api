@@ -1,6 +1,7 @@
 import { Rekognition } from "aws-sdk";
 import { TextDetection } from "aws-sdk/clients/rekognition";
 import { GameMode } from "./types";
+import { INSPECT_MAX_BYTES } from "buffer";
 
 const rekognition = new Rekognition({
     region: "ap-northeast-1",
@@ -32,11 +33,23 @@ export async function extractScore(image: Buffer): Promise<TimeLockerScore> {
             Bytes: image,
         },
     }).promise();
+
     const hard = res.TextDetections!.some((detection) => detection.DetectedText === "HARD");
     return {
-        score: parseInt(res.TextDetections![2].DetectedText!, 10),
+        score: extractScoreCore(res),
         mode: hard ? GameMode.Hard : GameMode.Normal,
     };
+}
+
+function extractScoreCore(res: Rekognition.Types.DetectTextResponse): number {
+    const tds = res.TextDetections!;
+    let ret = 0;
+    ret = parseInt(tds[2].DetectedText!, 10);
+    if (!isNaN(ret)) {
+        return ret;
+    }
+    ret = parseInt(tds[1].DetectedText!, 10);
+    return ret;
 }
 
 export interface IExtractArmamentsLevelResponse {
