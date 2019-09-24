@@ -609,13 +609,13 @@ async function getDailySummaryScore(): Promise<IModeData<IDailySummaryScore[]>> 
   const query = `
 select
   ${SQL_COLUMNS_SUMMARY_SCORE.sql}
-  , substring(created, 1, 10) playDate
+  , date_format(from_iso8601_timestamp(created) at time zone 'Asia/Tokyo', '%Y-%m-%d') playDate
 from
   "time-locker"."${PLAY_RESULT_ATHENA_TABLE}"
 where 1=1
   and cardinality(armaments) > 0
 group by
-  substring(created, 1, 10)
+  date_format(from_iso8601_timestamp(created) at time zone 'Asia/Tokyo', '%Y-%m-%d')
   , mode
 order by
   playDate desc
