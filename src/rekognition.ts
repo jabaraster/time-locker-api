@@ -32,11 +32,23 @@ export async function extractScore(image: Buffer): Promise<TimeLockerScore> {
             Bytes: image,
         },
     }).promise();
+
     const hard = res.TextDetections!.some((detection) => detection.DetectedText === "HARD");
     return {
-        score: parseInt(res.TextDetections![2].DetectedText!, 10),
+        score: extractScoreCore(res),
         mode: hard ? GameMode.Hard : GameMode.Normal,
     };
+}
+
+function extractScoreCore(res: Rekognition.Types.DetectTextResponse): number {
+    const tds = res.TextDetections!;
+    let ret = 0;
+    ret = parseInt(tds[2].DetectedText!, 10);
+    if (!isNaN(ret)) {
+        return ret;
+    }
+    ret = parseInt(tds[1].DetectedText!, 10);
+    return ret;
 }
 
 export interface IExtractArmamentsLevelResponse {
@@ -84,9 +96,9 @@ export async function extractArmamentsLevel(image: Buffer): Promise<IExtractArma
 }
 
 if (require.main === module) {
-  (async () => {
-      const path = "/Users/jabaraster/save/Time Locker/5B41A792-3EB2-4242-B1D8-D8A41F6238DC.jpg";
-      const res = await extractScore(require("fs").readFileSync(path));
-      console.log(res);
-  })();
+    (async () => {
+        const path = "/Users/jabaraster/save/Time Locker/5B41A792-3EB2-4242-B1D8-D8A41F6238DC.jpg";
+        const res = await extractScore(require("fs").readFileSync(path));
+        console.log(res);
+    })();
 }
