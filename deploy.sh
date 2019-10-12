@@ -5,7 +5,7 @@ if [ "$EVERNOTE_CONSUMER_KEY" = "" ]; then
 fi
 
 tsc \
-&& \cp -f ./package.json ./sam-app/ \
+&& \cp -f ./package.json ./sam-app/time-locker-nodejs \
 && cd sam-app \
 && sam build \
 && sam package --template-file        ./.aws-sam/build/template.yaml \

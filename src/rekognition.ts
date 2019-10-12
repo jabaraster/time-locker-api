@@ -1,5 +1,6 @@
 import { Rekognition } from "aws-sdk";
 import { TextDetection } from "aws-sdk/clients/rekognition";
+import * as Jimp from "jimp";
 import { GameMode } from "./types";
 
 const rekognition = new Rekognition({
@@ -26,10 +27,22 @@ export interface TimeLockerArmament {
     supporter: number;
 }
 
+async function clipImage(jimp: any, src: Buffer): Promise<Buffer> {
+    const clipped = (await jimp.read(src)).crop(20, 190, 340, 200);
+    return new Promise((resolve, reject) => {
+        clipped.getBuffer(jimp.MIME_JPEG, (err: Error, buffer: Buffer) => {
+            if (err) {
+                reject(err);
+            }
+            resolve(buffer);
+        });
+    });
+}
+
 export async function extractScore(image: Buffer): Promise<TimeLockerScore> {
     const res = await rekognition.detectText({
         Image: {
-            Bytes: image,
+            Bytes: await clipImage(Jimp, image),
         },
     }).promise();
 
@@ -42,13 +55,8 @@ export async function extractScore(image: Buffer): Promise<TimeLockerScore> {
 
 function extractScoreCore(res: Rekognition.Types.DetectTextResponse): number {
     const tds = res.TextDetections!;
-    let ret = 0;
-    ret = parseInt(tds[2].DetectedText!, 10);
-    if (!isNaN(ret)) {
-        return ret;
-    }
-    ret = parseInt(tds[1].DetectedText!, 10);
-    return ret;
+    const ret = parseInt(tds[0].DetectedText!, 10);
+    return isNaN(ret) ? 0 : ret ;
 }
 
 export interface IExtractArmamentsLevelResponse {

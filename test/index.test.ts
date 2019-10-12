@@ -3,8 +3,8 @@ import * as sut from "../src/rekognition";
 
 (async () => {
     try {
-        const res = await sut.extractScore(fs.readFileSync("./nogit/invalid.jpg"));
-        console.log(res);
+        const ret = await sut.extractScore(fs.readFileSync("nogit/sample.jpg"));
+        console.log(ret);
     } catch (e) {
         console.log("!!! error !!!");
         console.log(e);
