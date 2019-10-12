@@ -1,5 +1,6 @@
 import { Rekognition } from "aws-sdk";
 import { TextDetection } from "aws-sdk/clients/rekognition";
+import * as Jimp from "jimp";
 import { GameMode } from "./types";
 
 const rekognition = new Rekognition({
@@ -26,17 +27,36 @@ export interface TimeLockerArmament {
     supporter: number;
 }
 
+async function clipImage(jimp: any, src: Buffer): Promise<Buffer> {
+    const clipped = (await jimp.read(src)).crop(20, 190, 340, 200);
+    return new Promise((resolve, reject) => {
+        clipped.getBuffer(jimp.MIME_JPEG, (err: Error, buffer: Buffer) => {
+            if (err) {
+                reject(err);
+            }
+            resolve(buffer);
+        });
+    });
+}
+
 export async function extractScore(image: Buffer): Promise<TimeLockerScore> {
     const res = await rekognition.detectText({
         Image: {
-            Bytes: image,
+            Bytes: await clipImage(Jimp, image),
         },
     }).promise();
+
     const hard = res.TextDetections!.some((detection) => detection.DetectedText === "HARD");
     return {
-        score: parseInt(res.TextDetections![2].DetectedText!, 10),
+        score: extractScoreCore(res),
         mode: hard ? GameMode.Hard : GameMode.Normal,
     };
+}
+
+function extractScoreCore(res: Rekognition.Types.DetectTextResponse): number {
+    const tds = res.TextDetections!;
+    const ret = parseInt(tds[0].DetectedText!, 10);
+    return isNaN(ret) ? 0 : ret ;
 }
 
 export interface IExtractArmamentsLevelResponse {
@@ -84,9 +104,9 @@ export async function extractArmamentsLevel(image: Buffer): Promise<IExtractArma
 }
 
 if (require.main === module) {
-  (async () => {
-      const path = "/Users/jabaraster/save/Time Locker/5B41A792-3EB2-4242-B1D8-D8A41F6238DC.jpg";
-      const res = await extractScore(require("fs").readFileSync(path));
-      console.log(res);
-  })();
+    (async () => {
+        const path = "/Users/jabaraster/save/Time Locker/5B41A792-3EB2-4242-B1D8-D8A41F6238DC.jpg";
+        const res = await extractScore(require("fs").readFileSync(path));
+        console.log(res);
+    })();
 }
