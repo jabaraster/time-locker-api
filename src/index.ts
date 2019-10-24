@@ -190,7 +190,7 @@ interface IArmamentsExtracterResonse {
 interface IApiCoreResult<R> {
   result?: R;
   responseHeaders?: { [key: string]: string };
-  responseFunction: (body: any, headers?: { [jjjjjjkey: string]: string }) => APIGatewayProxyResult;
+  responseFunction: (body: any, headers?: { [key: string]: string }) => APIGatewayProxyResult;
 }
 
 /*****************************************

@@ -28,7 +28,7 @@ export interface TimeLockerArmament {
 }
 
 async function clipImage(jimp: any, src: Buffer): Promise<Buffer> {
-    const clipped = (await jimp.read(src)).crop(20, 190, 340, 200);
+    const clipped = (await jimp.read(src)).crop(20, 190, 360, 200);
     return new Promise((resolve, reject) => {
         clipped.getBuffer(jimp.MIME_JPEG, (err: Error, buffer: Buffer) => {
             if (err) {
