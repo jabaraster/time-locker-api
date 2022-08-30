@@ -11,7 +11,7 @@
   "dependencies": {
     "evernote": "^2.0.5",
     "jimp": "^0.8.4",
-    "moment-timezone": "^0.5.26"
+    "moment-timezone": "^0.5.35"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.27",
